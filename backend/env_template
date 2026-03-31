@@ -1,13 +1,5 @@
-# 税理士事務所AIシステム - 環境設定ファイル
-# このファイルを「.env」にリネームして使用してください
-
-# AI APIキー（どちらか1つでOK。Gemini推奨＝無料）
-ANTHROPIC_API_KEY=ここにAPIキーを貼り付けてください
+ANTHROPIC_API_KEY=
 GOOGLE_API_KEY=
-
-# Gmail連携（秘書AI メール機能用）
 GMAIL_ADDRESS=
 GMAIL_APP_PASSWORD=
-
-# LINE Bot連携（任意）
 LINE_CHANNEL_ACCESS_TOKEN=
