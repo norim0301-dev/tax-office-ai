@@ -1,0 +1,2143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>税理士事務所 AIエージェント管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Noto Sans JP', 'Helvetica Neue', Arial, sans-serif; background: #F0F4F8; color: #1A202C; min-height: 100vh; }
+    .chat-container { display: flex; flex-direction: column; height: calc(100vh - 0px); }
+    .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .msg-user { align-self: flex-end; background: #1F4E79; color: #fff; border-radius: 16px 16px 4px 16px; padding: 10px 16px; font-size: 14px; line-height: 1.6; max-width: 78%; word-break: break-word; }
+    .msg-assistant { background: #fff; color: #1A202C; border-radius: 16px 16px 16px 4px; padding: 12px 16px; font-size: 14px; line-height: 1.7; box-shadow: 0 1px 4px rgba(0,0,0,0.08); white-space: pre-wrap; word-break: break-word; flex: 1; }
+    .msg-thinking { background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 10px; padding: 8px 12px; font-size: 12px; color: #0369A1; max-width: 72%; align-self: flex-start; }
+    .msg-tool { background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 10px; padding: 8px 12px; font-size: 12px; color: #92400E; max-width: 72%; align-self: flex-start; }
+    .msg-error { background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; padding: 8px 12px; font-size: 13px; color: #DC2626; max-width: 78%; align-self: flex-start; }
+    .msg-routing { background: #EDE9FE; border: 1px solid #C4B5FD; border-radius: 10px; padding: 8px 12px; font-size: 12px; color: #6D28D9; max-width: 72%; align-self: flex-start; animation: pulse-bg 1.5s ease-in-out infinite; }
+    @keyframes pulse-bg { 0%,100%{opacity:1} 50%{opacity:0.7} }
+    .msg-file { align-self: flex-end; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 12px; padding: 10px 16px; font-size: 13px; color: #1D4ED8; max-width: 78%; display: flex; align-items: center; gap: 8; }
+    .msg-divider { text-align: center; color: #94A3B8; font-size: 12px; padding: 8px 0; position: relative; }
+    .msg-divider::before, .msg-divider::after { content: ''; position: absolute; top: 50%; width: 30%; height: 1px; background: #CBD5E0; }
+    .msg-divider::before { left: 5%; }
+    .msg-divider::after { right: 5%; }
+    .typing-dot { display: inline-block; width: 7px; height: 7px; background: #94A3B8; border-radius: 50%; animation: bounce 1.2s infinite; margin: 0 2px; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+    .line-btn { background: #00B900; color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; font-weight: 700; white-space: nowrap; transition: background 0.15s; }
+    .line-btn:hover { background: #009900; }
+    .line-btn:disabled { background: #94A3B8; cursor: not-allowed; }
+    .line-sent { background: #DCFCE7; color: #166534; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700; }
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+    .modal-box { background: #fff; border-radius: 16px; padding: 28px 32px; width: 480px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,0.18); max-height: 90vh; overflow-y: auto; }
+    .modal-large { width: 640px; }
+    /* Client cards */
+    .client-card { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border: 2px solid #E2E8F0; cursor: pointer; transition: all 0.15s; }
+    .client-card:hover { border-color: #1F4E79; box-shadow: 0 4px 12px rgba(31,78,121,0.15); }
+    /* Task cards */
+    .task-card { background: #fff; border-radius: 12px; padding: 14px 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-left: 4px solid #94A3B8; transition: all 0.15s; }
+    .task-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+    .task-card.priority-high { border-left-color: #EF4444; }
+    .task-card.priority-medium { border-left-color: #F59E0B; }
+    .task-card.priority-low { border-left-color: #22C55E; }
+    /* Calendar */
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #E2E8F0; border-radius: 12px; overflow: hidden; }
+    .calendar-grid .day-header { background: #F8FAFC; padding: 8px; text-align: center; font-size: 12px; font-weight: 700; color: #64748B; }
+    .calendar-grid .day-cell { background: #fff; padding: 8px; min-height: 80px; font-size: 12px; cursor: pointer; transition: background 0.1s; position: relative; }
+    .calendar-grid .day-cell:hover { background: #F0F9FF; }
+    .calendar-grid .day-cell.today { background: #EFF6FF; }
+    .calendar-grid .day-cell.other-month { opacity: 0.4; }
+    .calendar-grid .day-num { font-weight: 700; color: #334155; margin-bottom: 4px; }
+    .calendar-grid .day-cell.sunday .day-num { color: #EF4444; }
+    .calendar-grid .day-cell.saturday .day-num { color: #3B82F6; }
+    /* Deadline pills */
+    .deadline-pill { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 600; margin: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .deadline-pill.overdue { background: #FEE2E2; color: #DC2626; }
+    .deadline-pill.soon { background: #FFF7ED; color: #EA580C; }
+    .deadline-pill.future { background: #EFF6FF; color: #2563EB; }
+    /* Checklist */
+    .checklist-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #F1F5F9; font-size: 13px; cursor: pointer; transition: background 0.1s; }
+    .checklist-item:hover { background: #F8FAFC; }
+    .checklist-item.is_checked { opacity: 0.6; }
+    .checklist-item.is_checked .checklist-label { text-decoration: line-through; }
+    .checklist-checkbox { width: 20px; height: 20px; border-radius: 4px; border: 2px solid #CBD5E0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.15s; }
+    .checklist-checkbox.checked { background: #22C55E; border-color: #22C55E; color: #fff; }
+    /* Progress bar */
+    .progress-bar { height: 8px; background: #E2E8F0; border-radius: 4px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #22C55E, #16A34A); border-radius: 4px; transition: width 0.3s ease; }
+    /* File upload */
+    .file-upload-btn { background: none; border: 1px solid #CBD5E0; border-radius: 10px; padding: 0; width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; transition: all 0.15s; flex-shrink: 0; }
+    .file-upload-btn:hover { background: #F8FAFC; border-color: #94A3B8; }
+    .upload-progress { height: 3px; background: #E2E8F0; border-radius: 2px; overflow: hidden; margin-top: 4px; }
+    .upload-progress-fill { height: 100%; background: #3B82F6; transition: width 0.2s; }
+    /* Filter tabs */
+    .tab-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+    .tab-filter button { border: 1px solid #CBD5E0; background: #fff; border-radius: 20px; padding: 5px 14px; font-size: 12px; cursor: pointer; color: #334155; font-weight: 500; transition: all 0.15s; }
+    .tab-filter button.active { background: #1F4E79; color: #fff; border-color: #1F4E79; }
+    /* Badge */
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-red { background: #FEE2E2; color: #DC2626; }
+    .badge-orange { background: #FFF7ED; color: #EA580C; }
+    .badge-green { background: #DCFCE7; color: #166534; }
+    .badge-blue { background: #DBEAFE; color: #1D4ED8; }
+    .badge-gray { background: #F1F5F9; color: #64748B; }
+    /* Form elements */
+    .form-group { margin-bottom: 14px; }
+    .form-label { display: block; font-size: 12px; color: #334155; font-weight: 600; margin-bottom: 4px; }
+    .form-input { width: 100%; border: 1px solid #CBD5E0; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; font-family: inherit; transition: border-color 0.15s; }
+    .form-input:focus { border-color: #1F4E79; }
+    .form-select { width: 100%; border: 1px solid #CBD5E0; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; font-family: inherit; background: #fff; }
+    .form-textarea { width: 100%; border: 1px solid #CBD5E0; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; font-family: inherit; resize: vertical; min-height: 60px; }
+    .form-checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; }
+    .form-checkbox-label { display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer; }
+    .btn-primary { background: #1F4E79; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; cursor: pointer; font-size: 13px; font-weight: 700; transition: background 0.15s; }
+    .btn-primary:hover { background: #163A5C; }
+    .btn-secondary { background: #fff; color: #334155; border: 1px solid #CBD5E0; border-radius: 8px; padding: 8px 20px; cursor: pointer; font-size: 13px; font-weight: 500; }
+    .btn-danger { background: #EF4444; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; cursor: pointer; font-size: 13px; font-weight: 700; }
+    .btn-success { background: #22C55E; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-size: 12px; font-weight: 700; border-radius: 20px; }
+    /* Sidebar active indicator */
+    .nav-btn { background: transparent; color: #94A3B8; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 400; font-size: 14px; transition: all 0.15s; width: 100%; text-align: left; }
+    .nav-btn.active { background: #1F4E79; color: #fff; font-weight: 700; }
+    /* Section card */
+    .section-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; }
+    /* Settings */
+    .settings-section { background: #fff; border-radius: 12px; padding: 20px 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; }
+    .settings-section h3 { font-size: 15px; font-weight: 700; color: #1F4E79; margin-bottom: 12px; }
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .status-dot.online { background: #22C55E; }
+    .status-dot.offline { background: #EF4444; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const API = 'http://localhost:8000';
+
+    const STATUS_LABEL = { active: '稼働中', busy: '処理中', idle: '待機中' };
+    const STATUS_COLOR = { active: '#22C55E', busy: '#F59E0B', idle: '#94A3B8' };
+    const PRIORITY_LABEL = { high: '高', medium: '中', low: '低' };
+    const PRIORITY_COLOR = { high: '#EF4444', medium: '#F59E0B', low: '#22C55E' };
+    const TASK_STATUS_LABEL = { pending: '未着手', in_progress: '処理中', done: '完了' };
+    const TASK_STATUS_COLOR = { pending: '#94A3B8', in_progress: '#F59E0B', done: '#22C55E' };
+
+    const QUICK_ACTIONS = [
+      { label: '📋 法人税の書類', text: '法人のお客様の法人税申告に必要な書類チェックリストを作成してください。' },
+      { label: '📝 確定申告の書類', text: '個人の確定申告（所得税）に必要な書類チェックリストを作成してください。不動産所得があります。' },
+      { label: '✉️ 書類提出依頼メール', text: '「山田商事株式会社」様に決算書類の提出依頼メールを作成してください。期限は3月31日です。' },
+      { label: '🔍 問い合わせ分類', text: '「インボイス未登録ですが消費税申告はどうなりますか？」という問い合わせを分類してください。' },
+      { label: '📅 算定基礎届の案内', text: '「田中建設株式会社」様への算定基礎届の提出案内文を作成してください。期限は7月10日です。' },
+      { label: '🏠 相続税の書類', text: '相続税申告に必要な書類チェックリストを作成してください。相続人は3名います。' },
+    ];
+
+    const ALL_AGENTS = {
+      kanri:   { name: '統括管理AI',   color: '#1F4E79', initial: '統', label: '👑', path: '/api/agents/kanri/chat' },
+      hisho:   { name: '秘書AI',       color: '#2E75B6', initial: '秘', label: '✍️', path: '/api/agents/hisho/chat' },
+      hojin:   { name: '法人税AI',     color: '#1A5276', initial: '法', label: '🏢', path: '/api/agents/hojin/chat' },
+      shohi:   { name: '消費税AI',     color: '#117A65', initial: '消', label: '🧾', path: '/api/agents/shohi/chat' },
+      shotoku: { name: '所得税AI',     color: '#6E2FBB', initial: '所', label: '📝', path: '/api/agents/shotoku/chat' },
+      sozoku:  { name: '相続税AI',     color: '#7B241C', initial: '相', label: '🏛️', path: '/api/agents/sozoku/chat' },
+      tochi:   { name: '土地評価AI',   color: '#784212', initial: '土', label: '🗺️', path: '/api/agents/tochi/chat' },
+      kaikei:  { name: '会計入力AI',   color: '#1B6CA8', initial: '会', label: '📒', path: '/api/agents/kaikei/chat' },
+      roumu:   { name: '労務・社保AI', color: '#17A589', initial: '労', label: '👷', path: '/api/agents/roumu/chat' },
+    };
+
+    const AGENT_QUICK_ACTIONS = {
+      kanri: [
+        { label: '📅 期限確認（60日）', text: '今後60日間の申告・提出期限を確認して整理してください。' },
+        { label: '📊 週次状況報告', text: '全エージェントの週次状況報告書を作成してください。' },
+        { label: '📋 タスク割り当て', text: '「山田株式会社の法人税申告（3月決算）」を法人税AIに割り当ててください。優先度：高、期限：5月31日。' },
+        { label: '🗓 4月スケジュール', text: '4月の業務スケジュールを作成してください。' },
+        { label: '⚠️ エスカレーション', text: '「相続案件で書類不備、期限まで2週間」という緊急事態を所長に報告する文書を作成してください。' },
+        { label: '🤖 全体最適化提案', text: '現在の稼働状況を分析して業務効率化の提案をしてください。' },
+      ],
+      hisho: [
+        { label: '📋 今日のサマリー', text: '今日の業務サマリーをお願いします。' },
+        { label: '👥 顧問先一覧', text: '顧問先の一覧を見せて。' },
+        { label: '📝 タスク確認', text: '今のタスク状況を教えて。' },
+        { label: '✉️ 書類提出依頼メール', text: '山田商事さんに決算書類の提出依頼メールを作って。' },
+        { label: '📅 今後の期限', text: '今後の申告期限を確認して。' },
+        { label: '🔍 最新税制', text: '最新の税制改正情報を調べて。' },
+      ],
+      hojin: [
+        { label: '📋 申告書チェックリスト', text: '3月決算の法人税申告書作成チェックリストを作成してください。' },
+        { label: '💰 交際費の計算', text: '資本金1000万円の中小法人で交際費の支出が150万円です。損金算入限度額を計算してください。' },
+        { label: '📝 別表の確認項目', text: '法人税申告書の主要な別表（別表四・別表五）の確認ポイントを教えてください。' },
+        { label: '🏗️ 減価償却チェック', text: '固定資産の減価償却費の計算と別表十六への記載方法を確認したいです。' },
+        { label: '📊 役員報酬の注意点', text: '役員報酬の損金算入要件と定期同額給与について確認してください。' },
+        { label: '🔄 修正申告の手順', text: '法人税の修正申告が必要になりました。手順と注意事項を教えてください。' },
+      ],
+      shohi: [
+        { label: '🧾 インボイス確認', text: '年商500万円の法人でインボイス未登録です。登録すべきか確認してください。' },
+        { label: '💹 消費税計算（一般）', text: '課税売上1000万円、課税仕入700万円の一般課税の消費税額を計算してください。' },
+        { label: '📊 簡易課税の計算', text: '飲食業（第四種）で課税売上800万円の簡易課税の消費税額を計算してください。' },
+        { label: '🔍 課税区分の判定', text: '「土地の売却代金300万円」の消費税の課税区分を教えてください。' },
+        { label: '🏥 医療費の区分', text: '医療費の消費税課税区分（非課税・課税）の判定基準を教えてください。' },
+        { label: '📤 輸出免税の確認', text: '輸出取引の消費税免税の要件と申告書への記載方法を確認してください。' },
+      ],
+      shotoku: [
+        { label: '📋 確定申告の書類', text: '給与所得と不動産所得がある場合の確定申告に必要な書類を教えてください。' },
+        { label: '🏥 医療費控除の計算', text: '年収600万円で医療費が30万円（保険補填なし）の場合の医療費控除額を計算してください。' },
+        { label: '🏠 住宅ローン控除', text: '住宅ローン控除の要件と初年度・2年目以降の手続きの違いを教えてください。' },
+        { label: '🎁 ふるさと納税の確認', text: 'ふるさと納税の控除上限額の目安と確定申告での手続きを教えてください。' },
+        { label: '👨‍👩‍👧 扶養控除の確認', text: '扶養控除の要件と配偶者控除との違いを教えてください。' },
+        { label: '📱 e-Tax申告の準備', text: 'e-Taxで確定申告するために必要な準備と手順を教えてください。' },
+      ],
+      sozoku: [
+        { label: '📊 基礎控除の計算', text: '相続人が配偶者・子2名の場合の基礎控除額と申告要否を確認してください。' },
+        { label: '🏠 小規模宅地の特例', text: '同居の長男が自宅（150㎡）を相続した場合の小規模宅地等の特例の適用可否を確認してください。' },
+        { label: '📋 申告書類一覧', text: '不動産・株式・預金がある相続税申告に必要な書類一覧を作成してください。相続人は3名です。' },
+        { label: '🎁 贈与税の計算', text: '子への現金贈与300万円（暦年課税）の贈与税額を計算してください。' },
+        { label: '⏰ 10ヶ月期限の管理', text: '相続開始日から申告期限（10ヶ月）までのスケジュールと対応事項を整理してください。' },
+        { label: '💰 配偶者の税額軽減', text: '配偶者の税額軽減の要件と活用方法を教えてください。' },
+      ],
+      tochi: [
+        { label: '📐 路線価評価の計算', text: '路線価20万円/㎡、面積200㎡、奥行25mの土地の評価額を計算してください。' },
+        { label: '📋 評価明細の確認項目', text: '相続税申告用の土地評価明細書作成の確認ポイントを教えてください。' },
+        { label: '🗂️ 不整形地の補正', text: '不整形地の評価における補正率の適用方法と計算例を教えてください。' },
+        { label: '🏘️ 貸宅地の評価', text: '借地権割合60%の地域で貸宅地の評価額を計算する方法を教えてください。' },
+        { label: '📄 収集資料リスト', text: '「山田太郎様（相続税申告）東京都渋谷区の土地200㎡」の評価に必要な資料リストを作成してください。' },
+        { label: '🏗️ 貸家建付地の評価', text: 'アパートが建っている土地（貸家建付地）の評価方法を教えてください。' },
+      ],
+      kaikei: [
+        { label: '📒 仕訳の提案', text: '「クライアントへの接待費用50,000円を現金で支払った」の仕訳を教えてください（法人）。' },
+        { label: '📊 試算表のレビュー', text: '3月の試算表で売上1200万円・経費900万円・利益率25%です。前月より5%低下しました。確認ポイントを教えてください。' },
+        { label: '📝 決算整理仕訳', text: '3月決算の決算整理仕訳の一覧を作成してください。固定資産・前払費用・未払費用があります。' },
+        { label: '🔍 勘定科目の確認', text: 'ソフトウェアの購入費用（50万円）の勘定科目と処理方法を教えてください。' },
+        { label: '💡 JDL入力のポイント', text: 'JDL会計での消費税コードの設定方法と注意点を教えてください。' },
+        { label: '📈 月次レビューの手順', text: '月次試算表レビューの標準的な手順とチェックポイントを教えてください。' },
+      ],
+      roumu: [
+        { label: '📋 入社手続きガイド', text: '正社員の入社時の社会保険資格取得届の手続き方法と必要書類を教えてください。' },
+        { label: '📊 算定基礎届の計算', text: '4月20万円・5月22万円・6月21万円の給与の標準報酬月額を計算してください。' },
+        { label: '🔄 月額変更届の判定', text: '現在の標準報酬月額が22万円で、昇給後3ヶ月の給与が25万・26万・25万円です。月変は必要ですか？' },
+        { label: '📝 退職時の手続き', text: '退職者の社会保険喪失届・雇用保険離職票の手続き手順を教えてください。' },
+        { label: '🏭 労働保険年度更新', text: '一般事業で賃金総額3000万円の労働保険年度更新の計算と申告手順を教えてください。' },
+        { label: '👶 育休・産休の手続き', text: '育児休業・産前産後休業の社会保険手続きと給付金申請の流れを教えてください。' },
+      ],
+    };
+
+    const ORCHESTRATOR_QUICK_ACTIONS = AGENT_QUICK_ACTIONS.kanri;
+
+    const CHECKLIST_TEMPLATES = {
+      kessan: { name: '決算チェックリスト', items: ['試算表の確認','売掛金・買掛金の残高照合','固定資産台帳の確認','減価償却費の計算','前払費用・未払費用の計上','引当金の計上','消費税の確認','法人税別表の作成','決算書の最終確認','申告書の提出'] },
+      kakutei: { name: '確定申告チェックリスト', items: ['源泉徴収票の確認','医療費の集計','社会保険料の確認','生命保険料控除証明書','ふるさと納税の寄附金受領書','不動産所得の収支内訳書','事業所得の決算書','株式等の譲渡所得','申告書の作成・確認','e-Taxでの提出'] },
+      nenmatsu: { name: '年末調整チェックリスト', items: ['扶養控除等申告書の回収','保険料控除申告書の回収','住宅ローン控除申告書の回収','各種控除証明書の確認','給与・賞与の集計','年税額の計算','過不足額の精算','源泉徴収票の作成','法定調書の作成','給与支払報告書の提出'] },
+      getsuji: { name: '月次チェックリスト', items: ['現金出納帳の確認','預金通帳の照合','売上の計上確認','経費の計上確認','消費税区分の確認','試算表の出力・確認','前月比較の分析','顧問先への報告準備'] },
+      shinki: { name: '新規顧問先チェックリスト', items: ['契約書の締結','基本情報の登録','過去の申告書の入手','会計ソフトの設定','届出書の確認・提出','顧問料の設定','担当者の決定','初回ヒアリングの実施'] },
+    };
+
+    // ── GenericBubble ──
+    function GenericBubble({ msg, agentColor, agentInitial, lineSettings }) {
+      const [copied, setCopied] = React.useState(false);
+      const hasLineToken = lineSettings && lineSettings.channelToken && lineSettings.lineUserId;
+
+      const handleCopy = () => {
+        navigator.clipboard.writeText(msg.content).catch(() => {
+          const ta = document.createElement('textarea');
+          ta.value = msg.content;
+          document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+        });
+        setCopied(true); setTimeout(() => setCopied(false), 2500);
+      };
+      const handleLineOpen = () => window.open(`https://line.me/R/msg/text/?${encodeURIComponent(msg.content)}`, '_blank');
+
+      if (msg.role === 'user') return <div className="msg-user">{msg.content}</div>;
+      if (msg.role === 'thinking') return <div className="msg-thinking">🧠 <strong>思考中...</strong> {msg.content}</div>;
+      if (msg.role === 'tool_use') return <div className="msg-tool">🔧 <strong>{msg.content}</strong></div>;
+      if (msg.role === 'routing') return <div className="msg-routing">🔄 <strong>{msg.content}</strong></div>;
+      if (msg.role === 'error') return <div className="msg-error">⚠️ {msg.content}</div>;
+      if (msg.role === 'file') return <div className="msg-file">📎 {msg.content}</div>;
+      if (msg.role === 'divider') return <div className="msg-divider">{msg.content}</div>;
+      if (msg.role === 'typing') return (
+        <div style={{ alignSelf: 'flex-start', background: '#fff', borderRadius: '16px 16px 16px 4px', padding: '12px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
+          <span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/>
+        </div>
+      );
+      return (
+        <div style={{ alignSelf: 'flex-start', display: 'flex', gap: 10, maxWidth: '82%' }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', background: agentColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0, marginTop: 4 }}>{agentInitial}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+            <div className="msg-assistant">{msg.content}</div>
+            {msg.consultedAgents && msg.consultedAgents.length > 0 && (
+              <div style={{ fontSize: 11, color: '#6D28D9', background: '#EDE9FE', padding: '4px 10px', borderRadius: 8, display: 'inline-block' }}>
+                参照したエージェント: {msg.consultedAgents.map(a => ALL_AGENTS[a]?.name || a).join(', ')}
+              </div>
+            )}
+            {msg.content && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={handleCopy} style={{ border: '1px solid #CBD5E0', background: copied ? '#DCFCE7' : '#fff', color: copied ? '#166534' : '#334155', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>
+                  {copied ? '✓ コピー済み' : '📋 コピー'}
+                </button>
+                <button onClick={handleLineOpen} style={{ background: '#00B900', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700 }}>
+                  📱 LINEで送る
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ── AgentChat with conversation history & file upload & routing indicator ──
+    function AgentChat({ agentId, agentName, agentColor, agentInitial, modelLabel, quickActions, apiPath }) {
+      const [messages, setMessages] = React.useState([]);
+      const [input, setInput] = React.useState('');
+      const [isLoading, setIsLoading] = React.useState(false);
+      const [history, setHistory] = React.useState([]);
+      const [historyLoaded, setHistoryLoaded] = React.useState(false);
+      const [uploading, setUploading] = React.useState(false);
+      const [uploadProgress, setUploadProgress] = React.useState(0);
+      const [lineSettings] = React.useState(() => {
+        try { return JSON.parse(localStorage.getItem('lineSettings') || '{}'); } catch { return {}; }
+      });
+      const messagesEndRef = React.useRef(null);
+      const fileInputRef = React.useRef(null);
+
+      React.useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+      const welcomeMessages = {
+        kanri: 'こんにちは。統括管理AIです。\n\n全エージェントのタスク配分・期限管理・進捗監視を担当しています。\n\n以下をお手伝いできます：\n📅 申告期限の一元確認\n📋 担当AIへのタスク割り当て\n📊 状況報告書・スケジュール作成\n⚠️ エスカレーション対応\n\nクイックボタンかメッセージでご指示ください。',
+        hisho:  'おはようございます、先生！秘書AIです。\n\n何でもお申し付けください：\n📋 今日のサマリー・タスク管理\n✉️ メール作成・送信・確認\n📄 各種文書の作成（案内状・督促状・お礼状など）\n🔍 税制改正・国税庁情報の調査\n👥 顧問先管理・期限確認\n💬 相談・雑談もOKです\n\n「📋 コピー」「📱 LINEで送る」で回答を活用できます。',
+      };
+
+      React.useEffect(() => {
+        setMessages([{ id: 0, role: 'assistant', content: welcomeMessages[agentId] || `${agentName}です。ご指示をどうぞ。` }]);
+        setHistory([]);
+        setHistoryLoaded(false);
+      }, [agentId]);
+
+      const loadConversationHistory = async () => {
+        try {
+          const res = await fetch(`${API}/api/conversations/${agentId}?limit=50`);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data && data.length > 0) {
+            const histMsgs = data.map((m, i) => ({ id: `hist-${i}`, role: m.role, content: m.content }));
+            setMessages(prev => [
+              ...histMsgs,
+              { id: 'divider', role: 'divider', content: '--- 過去の会話 ---' },
+              ...prev
+            ]);
+            setHistoryLoaded(true);
+          }
+        } catch (e) {
+          console.log('履歴の読み込みに失敗:', e);
+        }
+      };
+
+      const saveConversation = async (role, content) => {
+        try {
+          await fetch(`${API}/api/conversations/${agentId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role, content })
+          });
+        } catch (e) { /* silent */ }
+      };
+
+      const handleFileUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        setUploadProgress(0);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+          // Simulate progress
+          const progressInterval = setInterval(() => {
+            setUploadProgress(prev => Math.min(prev + 20, 90));
+          }, 200);
+
+          const res = await fetch(`${API}/api/upload`, { method: 'POST', body: formData });
+          clearInterval(progressInterval);
+          setUploadProgress(100);
+
+          if (!res.ok) throw new Error('アップロード失敗');
+
+          const data = await res.json();
+          setMessages(prev => [...prev, { id: Date.now(), role: 'file', content: `📄 ${file.name} をアップロードしました` }]);
+
+          setTimeout(() => {
+            setUploading(false);
+            setUploadProgress(0);
+            sendMessage(`アップロードしたファイル「${file.name}」を分析してください`);
+          }, 500);
+        } catch (err) {
+          setUploading(false);
+          setUploadProgress(0);
+          setMessages(prev => [...prev, { id: Date.now(), role: 'error', content: `ファイルアップロードエラー: ${err.message}` }]);
+        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      };
+
+      const sendMessage = async (text) => {
+        if (!text.trim() || isLoading) return;
+        const userText = text.trim();
+        setInput('');
+        setIsLoading(true);
+        const userMsgId = Date.now();
+        setMessages(prev => [...prev, { id: userMsgId, role: 'user', content: userText }]);
+        const typingId = userMsgId + 1;
+        setMessages(prev => [...prev, { id: typingId, role: 'typing', content: '' }]);
+        let assistantText = '';
+        const assistantMsgId = userMsgId + 2;
+        let consultedAgents = [];
+
+        try {
+          const res = await fetch(`${API}${apiPath}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: userText, history })
+          });
+          if (!res.ok) throw new Error(`HTTPエラー: ${res.status}`);
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          setMessages(prev => prev.filter(m => m.id !== typingId).concat({ id: assistantMsgId, role: 'assistant', content: '' }));
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            for (const line of decoder.decode(value).split('\n')) {
+              if (!line.startsWith('data: ')) continue;
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.type === 'text') {
+                  assistantText += data.text;
+                  const cap = assistantText;
+                  setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, content: cap, consultedAgents } : m));
+                } else if (data.type === 'thinking') {
+                  const tid = Date.now() + Math.random();
+                  setMessages(prev => {
+                    const f = prev.filter(m => m.id !== assistantMsgId);
+                    return [...f, { id: tid, role: 'thinking', content: data.thinking }, { id: assistantMsgId, role: 'assistant', content: assistantText, consultedAgents }];
+                  });
+                } else if (data.type === 'tool_use') {
+                  const tid = Date.now() + Math.random();
+                  // Detect agent routing for orchestrator
+                  const toolName = data.tool || '';
+                  const isRouting = agentId === 'kanri' && (toolName.includes('agent') || toolName.includes('route') || toolName.includes('delegate'));
+                  if (isRouting && data.input) {
+                    const targetAgent = data.input.agent_id || data.input.agent || '';
+                    if (targetAgent && !consultedAgents.includes(targetAgent)) {
+                      consultedAgents.push(targetAgent);
+                    }
+                    setMessages(prev => {
+                      const f = prev.filter(m => m.id !== assistantMsgId);
+                      return [...f, { id: tid, role: 'routing', content: `他のエージェントに問い合わせ中... (${ALL_AGENTS[targetAgent]?.name || targetAgent})` }, { id: assistantMsgId, role: 'assistant', content: assistantText, consultedAgents }];
+                    });
+                  } else {
+                    setMessages(prev => {
+                      const f = prev.filter(m => m.id !== assistantMsgId);
+                      return [...f, { id: tid, role: 'tool_use', content: data.label || `🔧 ${data.tool} 実行中...` }, { id: assistantMsgId, role: 'assistant', content: assistantText, consultedAgents }];
+                    });
+                  }
+                } else if (data.type === 'error') {
+                  setMessages(prev => prev.filter(m => m.id !== typingId).concat({ id: assistantMsgId, role: 'error', content: data.error }));
+                }
+              } catch {}
+            }
+          }
+          setHistory(prev => [...prev, { role: 'user', content: userText }, { role: 'assistant', content: assistantText }]);
+          saveConversation('user', userText);
+          saveConversation('assistant', assistantText);
+        } catch (err) {
+          setMessages(prev => prev.filter(m => m.id !== typingId).concat({ id: assistantMsgId, role: 'error', content: `接続エラー: ${err.message}` }));
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      return (
+        <div className="chat-container">
+          <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".pdf,.jpg,.png,.xlsx,.csv" style={{ display: 'none' }} />
+          {/* Header */}
+          <div style={{ background: '#fff', padding: '12px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 38, height: 38, borderRadius: '50%', background: agentColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700 }}>{agentInitial}</div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#1F4E79' }}>{agentName}</div>
+                <div style={{ fontSize: 11, color: '#22C55E' }}>● {modelLabel}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {!historyLoaded && (
+                <button onClick={loadConversationHistory}
+                  style={{ border: '1px solid #CBD5E0', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: '#1F4E79', fontWeight: 600 }}>
+                  📜 履歴を読み込み
+                </button>
+              )}
+              <button onClick={() => { setMessages([{ id: 0, role: 'assistant', content: welcomeMessages[agentId] || `${agentName}です。ご指示をどうぞ。` }]); setHistory([]); setHistoryLoaded(false); }}
+                style={{ border: '1px solid #E2E8F0', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: '#64748B' }}>
+                🗑 リセット
+              </button>
+            </div>
+          </div>
+          {/* Quick actions */}
+          <div style={{ padding: '8px 16px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
+            {quickActions.map((qa, i) => (
+              <button key={i} onClick={() => sendMessage(qa.text)} disabled={isLoading}
+                style={{ border: '1px solid #CBD5E0', background: '#fff', borderRadius: 20, padding: '5px 12px', fontSize: 11, cursor: 'pointer', color: '#334155', whiteSpace: 'nowrap', opacity: isLoading ? 0.5 : 1 }}>
+                {qa.label}
+              </button>
+            ))}
+          </div>
+          {/* Messages */}
+          <div className="chat-messages">
+            {messages.map(msg => <GenericBubble key={msg.id} msg={msg} agentColor={agentColor} agentInitial={agentInitial} lineSettings={lineSettings} />)}
+            <div ref={messagesEndRef} />
+          </div>
+          {/* Upload progress */}
+          {uploading && (
+            <div style={{ padding: '4px 16px', background: '#fff' }}>
+              <div className="upload-progress"><div className="upload-progress-fill" style={{ width: `${uploadProgress}%` }} /></div>
+              <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>アップロード中... {uploadProgress}%</div>
+            </div>
+          )}
+          {/* Input */}
+          <div style={{ padding: '12px 16px', background: '#fff', borderTop: '1px solid #E2E8F0', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+            <button className="file-upload-btn" onClick={() => fileInputRef.current?.click()} disabled={isLoading || uploading} title="ファイルを添付">
+              📎
+            </button>
+            <textarea value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }}}
+              placeholder="メッセージを入力...（Enterで送信、Shift+Enterで改行）"
+              disabled={isLoading} rows={1}
+              style={{ flex: 1, border: '1px solid #CBD5E0', borderRadius: 10, padding: '10px 14px', fontSize: 14, fontFamily: 'inherit', resize: 'none', outline: 'none', minHeight: 44, lineHeight: 1.5 }}
+              onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }}
+            />
+            <button onClick={() => sendMessage(input)} disabled={isLoading || !input.trim()}
+              style={{ background: isLoading || !input.trim() ? '#94A3B8' : '#1F4E79', color: '#fff', border: 'none', borderRadius: 10, padding: '0 20px', cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 700, height: 44, minWidth: 76 }}>
+              {isLoading ? '...' : '送信'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── LINE Settings Modal ──
+    function LineSettingsModal({ settings, onSave, onClose }) {
+      const [channelToken, setChannelToken] = React.useState(settings.channelToken || '');
+      const [lineUserId, setLineUserId] = React.useState(settings.lineUserId || '');
+      const [step, setStep] = React.useState('main');
+
+      if (step === 'howto') {
+        return (
+          <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-box" onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>📱 LINE Messaging API 設定方法</div>
+                <button onClick={() => setStep('main')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: '#94A3B8' }}>✕</button>
+              </div>
+              {[
+                { step: 1, title: 'LINE Developersにログイン', body: <><a href="https://developers.line.biz/ja/" target="_blank" style={{ color: '#2E75B6' }}>developers.line.biz</a> にアクセスし、LINEアカウントでログイン</> },
+                { step: 2, title: 'プロバイダーを作成', body: '「プロバイダーを作成」→ 任意の名前（例：税理士事務所）を入力して作成' },
+                { step: 3, title: 'Messaging APIチャンネルを作成', body: 'プロバイダーのページで「チャンネルを作成」→「Messaging API」を選択 → チャンネル名・業種などを入力して作成' },
+                { step: 4, title: 'チャンネルアクセストークンを発行', body: 'チャンネルページの「Messaging API設定」タブ → 一番下の「チャンネルアクセストークン」→「発行」ボタンをクリック → 表示されたトークンをコピー' },
+                { step: 5, title: '自分のユーザーIDを確認', body: '「チャンネル基本設定」タブ → 「あなたのユーザーID」欄に「Uxxxxxxxx...」という形式のIDが表示されています → コピー' },
+                { step: 6, title: 'BotのWebhookを有効化', body: 'Messaging API設定 → 「Webhookの利用」をオン → 応答メッセージをオフ（任意）' },
+                { step: 7, title: 'BotをLINEの友だちに追加', body: 'Messaging API設定 → QRコードをLINEアプリで読み取り → Botを友だち追加（これをしないとBotからメッセージを受け取れません）' },
+              ].map(({ step: s, title, body }) => (
+                <div key={s} style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#1F4E79', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{s}</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>{title}</div>
+                    <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.6 }}>{body}</div>
+                  </div>
+                </div>
+              ))}
+              <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8, padding: 12, fontSize: 12, color: '#92400E', marginTop: 8 }}>
+                ⚠️ LINE Notifyは2025年3月31日にサービス終了しました。現在はMessaging APIをご利用ください。
+              </div>
+              <button onClick={() => setStep('main')} style={{ marginTop: 16, width: '100%', background: '#1F4E79', color: '#fff', border: 'none', borderRadius: 8, padding: '10px', cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>
+                ← 設定画面に戻る
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal-box" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: '#1A202C' }}>📱 LINE設定</div>
+              <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, color: '#94A3B8' }}>✕</button>
+            </div>
+            <div style={{ marginBottom: 16, padding: 12, background: '#FFF7ED', borderRadius: 10, border: '1px solid #FED7AA', fontSize: 12, color: '#92400E' }}>
+              ⚠️ <strong>LINE Notifyは2025年3月31日に終了しました。</strong><br />
+              現在は下記の「LINE Messaging API」をお使いください。
+            </div>
+            <div style={{ marginBottom: 8, padding: 16, background: '#EFF6FF', borderRadius: 10, border: '1px solid #BFDBFE' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ fontWeight: 700, color: '#1D4ED8', fontSize: 13 }}>🔵 LINE Messaging API</div>
+                <button onClick={() => setStep('howto')}
+                  style={{ border: '1px solid #BFDBFE', background: '#fff', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', color: '#2E75B6', fontWeight: 600 }}>
+                  設定方法を見る →
+                </button>
+              </div>
+              <label style={{ fontSize: 12, color: '#334155', display: 'block', marginBottom: 4 }}>チャンネルアクセストークン</label>
+              <input type="password" value={channelToken} onChange={e => setChannelToken(e.target.value)}
+                placeholder="チャンネルアクセストークンを貼り付け..."
+                style={{ width: '100%', border: '1px solid #CBD5E0', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', marginBottom: 10 }}
+              />
+              <label style={{ fontSize: 12, color: '#334155', display: 'block', marginBottom: 4 }}>送信先ユーザーID</label>
+              <input type="text" value={lineUserId} onChange={e => setLineUserId(e.target.value)}
+                placeholder="Uxxxxxxxx...（チャンネル基本設定の「あなたのユーザーID」）"
+                style={{ width: '100%', border: '1px solid #CBD5E0', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }}
+              />
+            </div>
+            <div style={{ marginBottom: 20, padding: 10, background: '#F0FDF4', borderRadius: 8, border: '1px solid #BBF7D0', fontSize: 12, color: '#166534' }}>
+              💡 LINE設定なしでも <strong>「📋 コピー」ボタン</strong> でAIの回答をコピーし、LINEに貼り付けてご利用いただけます。
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={onClose} className="btn-secondary">キャンセル</button>
+              <button onClick={() => { onSave({ channelToken, lineUserId }); onClose(); }}
+                style={{ background: '#00B900', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── StatCard ──
+    function StatCard({ label, value, sub, color }) {
+      return (
+        <div style={{ background: '#fff', borderRadius: 12, padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', borderTop: `4px solid ${color}`, minWidth: 150, flex: 1 }}>
+          <div style={{ fontSize: 12, color: '#64748B', marginBottom: 6 }}>{label}</div>
+          <div style={{ fontSize: 30, fontWeight: 700, color }}>{value}</div>
+          {sub && <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 4 }}>{sub}</div>}
+        </div>
+      );
+    }
+
+    // ── AgentCard ──
+    function AgentCard({ agent, selected, onClick }) {
+      return (
+        <div onClick={onClick} style={{
+          background: selected ? agent.color : '#fff', color: selected ? '#fff' : '#1A202C',
+          borderRadius: 12, padding: '16px 18px', cursor: 'pointer',
+          boxShadow: selected ? `0 4px 14px ${agent.color}55` : '0 1px 4px rgba(0,0,0,0.08)',
+          border: `2px solid ${selected ? agent.color : '#E2E8F0'}`,
+          transition: 'all 0.15s ease', display: 'flex', flexDirection: 'column', gap: 8
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{agent.name}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: selected ? 'rgba(255,255,255,0.25)' : STATUS_COLOR[agent.status] + '22', color: selected ? '#fff' : STATUS_COLOR[agent.status] }}>● {STATUS_LABEL[agent.status]}</span>
+          </div>
+          <div style={{ fontSize: 12, opacity: selected ? 0.85 : 0.6 }}>{agent.role}</div>
+          <div style={{ display: 'flex', gap: 12, fontSize: 12, marginTop: 4 }}>
+            <span>完了 <strong>{agent.tasks_completed}</strong></span>
+            <span>未処理 <strong style={{ color: selected ? '#FCD34D' : '#EF4444' }}>{agent.tasks_pending}</strong></span>
+          </div>
+        </div>
+      );
+    }
+
+    // ── TaskRow (original read-only) ──
+    function TaskRow({ task }) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid #F1F5F9', fontSize: 13, minWidth: 0 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: PRIORITY_COLOR[task.priority] }} />
+          <span style={{ flex: 1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
+          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, flexShrink: 0, background: PRIORITY_COLOR[task.priority] + '18', color: PRIORITY_COLOR[task.priority], fontWeight: 600 }}>優先度{PRIORITY_LABEL[task.priority]}</span>
+          <span style={{ color: '#64748B', flexShrink: 0, minWidth: 90, fontSize: 12 }}>{task.agent_name}</span>
+          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, flexShrink: 0, background: task.status === 'in_progress' ? '#F59E0B18' : task.status === 'done' ? '#22C55E18' : '#94A3B818', color: task.status === 'in_progress' ? '#D97706' : task.status === 'done' ? '#22C55E' : '#94A3B8', fontWeight: 600 }}>{TASK_STATUS_LABEL[task.status]}</span>
+          {task.deadline && <span style={{ color: '#94A3B8', fontSize: 12, flexShrink: 0 }}>期限 {task.deadline}</span>}
+        </div>
+      );
+    }
+
+    // ── Client Management Tab ──
+    function ClientsTab() {
+      const [clients, setClients] = React.useState([]);
+      const [search, setSearch] = React.useState('');
+      const [showModal, setShowModal] = React.useState(false);
+      const [editClient, setEditClient] = React.useState(null);
+      const [loading, setLoading] = React.useState(true);
+      const [showNotifyModal, setShowNotifyModal] = React.useState(false);
+      const [selectedIds, setSelectedIds] = React.useState(new Set());
+      const [selectMode, setSelectMode] = React.useState(false);
+
+      const fetchClients = async () => {
+        try {
+          const res = await fetch(`${API}/api/clients`);
+          if (res.ok) { const d = await res.json(); setClients(d.clients || d || []); }
+        } catch (e) { console.log('クライアント取得エラー:', e); }
+        setLoading(false);
+      };
+
+      React.useEffect(() => { fetchClients(); }, []);
+
+      const handleDelete = async (id) => {
+        if (!confirm('この顧問先を削除しますか？')) return;
+        try {
+          await fetch(`${API}/api/clients/${id}`, { method: 'DELETE' });
+          fetchClients();
+        } catch (e) {}
+      };
+
+      const toggleSelect = (id) => {
+        setSelectedIds(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      };
+
+      const filtered = clients.filter(c =>
+        c.name?.toLowerCase().includes(search.toLowerCase()) ||
+        c.representative?.toLowerCase().includes(search.toLowerCase())
+      );
+
+      return (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1F4E79' }}>顧問先管理</h1>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-secondary" onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()); }}
+                style={{ fontSize: 12 }}>
+                {selectMode ? '✕ 選択解除' : '☑ 選択モード'}
+              </button>
+              {selectMode && selectedIds.size > 0 && (
+                <button onClick={() => setShowNotifyModal(true)}
+                  style={{ background: '#2E75B6', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  📨 一括通知（{selectedIds.size}件）
+                </button>
+              )}
+              <button className="btn-primary" onClick={() => { setEditClient(null); setShowModal(true); }}>＋ 新規登録</button>
+            </div>
+          </div>
+          <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input className="form-input" value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="顧問先名・代表者名で検索..." style={{ maxWidth: 400 }} />
+            {selectMode && (
+              <button onClick={() => setSelectedIds(new Set(filtered.map(c => c.id)))}
+                style={{ background: '#F1F5F9', border: '1px solid #CBD5E0', borderRadius: 6, padding: '6px 12px', fontSize: 11, cursor: 'pointer' }}>
+                全選択
+              </button>
+            )}
+          </div>
+          {loading ? (
+            <div style={{ color: '#64748B', textAlign: 'center', padding: 40 }}>読み込み中...</div>
+          ) : filtered.length === 0 ? (
+            <div style={{ color: '#94A3B8', textAlign: 'center', padding: 40 }}>
+              {clients.length === 0 ? '顧問先が登録されていません。「新規登録」から追加してください。' : '検索条件に一致する顧問先がありません。'}
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+              {filtered.map(c => (
+                <div key={c.id} className="client-card" onClick={() => { if (selectMode) { toggleSelect(c.id); } else { setEditClient(c); setShowModal(true); } }}
+                  style={selectMode && selectedIds.has(c.id) ? { border: '2px solid #2E75B6', background: '#EFF6FF' } : {}}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      {selectMode && (
+                        <input type="checkbox" checked={selectedIds.has(c.id)} readOnly
+                          style={{ marginTop: 3, width: 16, height: 16, accentColor: '#2E75B6' }} />
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: '#1A202C' }}>{c.name}</div>
+                        <div style={{ fontSize: 12, color: '#64748B' }}>{c.representative}</div>
+                      </div>
+                    </div>
+                    <span className={`badge ${c.client_type === '法人' ? 'badge-blue' : 'badge-green'}`}>{c.client_type || '法人'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, fontSize: 12, color: '#64748B', flexWrap: 'wrap' }}>
+                    {c.fiscal_year_end && <span>決算月: {c.fiscal_year_end}月</span>}
+                    {c.phone && <span>📞 {c.phone}</span>}
+                    {c.email && <span>✉️</span>}
+                    {c.line_user_id && <span style={{ color: '#00B900' }}>📱LINE</span>}
+                  </div>
+                  {(() => {
+                    let types = [];
+                    try {
+                      if (Array.isArray(c.tax_types)) types = c.tax_types;
+                      else if (typeof c.tax_types === 'string' && c.tax_types) { const p = JSON.parse(c.tax_types); if (Array.isArray(p)) types = p; }
+                    } catch(e) {}
+                    return types.length > 0 ? (
+                      <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
+                        {types.map(t => <span key={t} className="badge badge-gray" style={{ fontSize: 10 }}>{t}</span>)}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              ))}
+            </div>
+          )}
+          {showModal && <ClientModal client={editClient} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchClients(); }} onDelete={handleDelete} />}
+          {showNotifyModal && <BulkNotifyModal
+            clients={clients.filter(c => selectedIds.has(c.id))}
+            onClose={() => setShowNotifyModal(false)}
+            onSent={() => { setShowNotifyModal(false); setSelectMode(false); setSelectedIds(new Set()); }}
+          />}
+        </>
+      );
+    }
+
+    // ── Client Modal ──
+    // ── Bulk Notify Modal ──
+    function BulkNotifyModal({ clients, onClose, onSent }) {
+      const [subject, setSubject] = React.useState('');
+      const [message, setMessage] = React.useState('');
+      const [channels, setChannels] = React.useState(['email']);
+      const [sending, setSending] = React.useState(false);
+      const [results, setResults] = React.useState(null);
+      const [templates, setTemplates] = React.useState([]);
+      const lineSettings = JSON.parse(localStorage.getItem('lineSettings') || '{}');
+
+      React.useEffect(() => {
+        fetch(`${API}/api/email-templates`).then(r => r.ok ? r.json() : []).then(setTemplates).catch(() => {});
+      }, []);
+
+      const emailCount = clients.filter(c => c.email).length;
+      const lineCount = clients.filter(c => c.line_user_id).length;
+
+      const toggleChannel = (ch) => {
+        setChannels(prev => prev.includes(ch) ? prev.filter(x => x !== ch) : [...prev, ch]);
+      };
+
+      const applyTemplate = (tmpl) => {
+        setSubject(tmpl.subject);
+        setMessage(tmpl.body);
+      };
+
+      const handleSend = async () => {
+        if (!subject.trim() || !message.trim()) return alert('件名と本文を入力してください');
+        if (channels.length === 0) return alert('送信チャネルを選択してください');
+        setSending(true);
+        try {
+          const res = await fetch(`${API}/api/notify/bulk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              client_ids: clients.map(c => c.id),
+              subject, message, channels,
+              channel_token: lineSettings.channelToken || null,
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setResults(data.results);
+          } else {
+            alert('送信エラー');
+          }
+        } catch(e) { alert('送信エラー: ' + e.message); }
+        setSending(false);
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1F4E79' }}>📨 一括通知</h2>
+              <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div style={{ background: '#F0F9FF', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
+              <strong>送信先: {clients.length}件</strong>
+              <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
+                <span>✉️ メール可: {emailCount}件</span>
+                <span style={{ color: '#00B900' }}>📱 LINE可: {lineCount}件</span>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11, color: '#64748B' }}>
+                {clients.map(c => c.name).join(', ')}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>送信チャネル</label>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={channels.includes('email')} onChange={() => toggleChannel('email')} />
+                  <span style={{ fontSize: 13 }}>✉️ メール</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={channels.includes('line')} onChange={() => toggleChannel('line')} />
+                  <span style={{ fontSize: 13 }}>📱 LINE</span>
+                </label>
+              </div>
+            </div>
+
+            {templates.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>テンプレート</label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {templates.map(t => (
+                    <button key={t.id} onClick={() => applyTemplate(t)}
+                      style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <label className="form-label">件名</label>
+              <input className="form-input" value={subject} onChange={e => setSubject(e.target.value)} placeholder="例: 決算書類ご提出のお願い" />
+            </div>
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label className="form-label">本文</label>
+              <textarea className="form-textarea" value={message} onChange={e => setMessage(e.target.value)}
+                placeholder="顧問先様への連絡内容を入力..." rows={6} />
+            </div>
+
+            {results ? (
+              <div style={{ background: '#F0FDF4', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8, color: '#166534' }}>送信結果</div>
+                {results.map((r, i) => (
+                  <div key={i} style={{ fontSize: 12, marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600 }}>{r.name || `ID:${r.client_id}`}</span>
+                    {r.email_sent && <span style={{ color: '#166534' }}>✉️✓</span>}
+                    {r.line_sent && <span style={{ color: '#00B900' }}>📱✓</span>}
+                    {r.email_error && <span style={{ color: '#DC2626', fontSize: 10 }}>✉️✗</span>}
+                    {r.line_error && <span style={{ color: '#DC2626', fontSize: 10 }}>📱✗</span>}
+                    {r.status === 'not_found' && <span style={{ color: '#94A3B8' }}>見つかりません</span>}
+                  </div>
+                ))}
+                <button className="btn-primary" onClick={onSent} style={{ marginTop: 10 }}>閉じる</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button className="btn-secondary" onClick={onClose}>キャンセル</button>
+                <button className="btn-primary" onClick={handleSend} disabled={sending}>
+                  {sending ? '送信中...' : `📨 ${clients.length}件に送信`}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function ClientModal({ client, onClose, onSaved, onDelete }) {
+      const [form, setForm] = React.useState(() => {
+        const c = client || {};
+        let taxTypes = c.tax_types || [];
+        if (typeof taxTypes === 'string') { try { taxTypes = JSON.parse(taxTypes); } catch(e) { taxTypes = []; } }
+        if (!Array.isArray(taxTypes)) taxTypes = [];
+        return {
+          name: '', client_type: '法人', representative: '', fiscal_year_end: 3,
+          tax_types: [], address: '', phone: '', email: '', contact_person: '',
+          invoice_number: '', memo: '', line_user_id: '',
+          ...c,
+          tax_types: taxTypes
+        };
+      });
+      const [saving, setSaving] = React.useState(false);
+
+      const taxOptions = ['法人税', '消費税', '所得税', '相続税'];
+
+      const toggleTax = (t) => {
+        setForm(prev => ({
+          ...prev,
+          tax_types: prev.tax_types.includes(t) ? prev.tax_types.filter(x => x !== t) : [...prev.tax_types, t]
+        }));
+      };
+
+      const handleSave = async () => {
+        if (!form.name.trim()) return alert('顧問先名は必須です');
+        setSaving(true);
+        try {
+          const method = client?.id ? 'PUT' : 'POST';
+          const url = client?.id ? `${API}/api/clients/${client.id}` : `${API}/api/clients`;
+          const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(form)
+          });
+          if (res.ok) onSaved();
+          else alert('保存に失敗しました');
+        } catch (e) { alert('保存エラー: ' + e.message); }
+        setSaving(false);
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal-box modal-large" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 17, fontWeight: 700 }}>{client?.id ? '顧問先 編集' : '新規顧問先 登録'}</div>
+              <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, color: '#94A3B8' }}>✕</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label">顧問先名 *</label>
+                <input className="form-input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">区分</label>
+                <select className="form-select" value={form.client_type} onChange={e => setForm({...form, client_type: e.target.value})}>
+                  <option value="法人">法人</option>
+                  <option value="個人">個人</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">代表者</label>
+                <input className="form-input" value={form.representative} onChange={e => setForm({...form, representative: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">決算月</label>
+                <select className="form-select" value={form.fiscal_year_end} onChange={e => setForm({...form, fiscal_year_end: parseInt(e.target.value)})}>
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{m}月</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">担当者</label>
+                <input className="form-input" value={form.contact_person} onChange={e => setForm({...form, contact_person: e.target.value})} />
+              </div>
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label">税目</label>
+                <div className="form-checkbox-group">
+                  {taxOptions.map(t => (
+                    <label key={t} className="form-checkbox-label">
+                      <input type="checkbox" checked={form.tax_types.includes(t)} onChange={() => toggleTax(t)} />
+                      {t}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label">住所</label>
+                <input className="form-input" value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">電話番号</label>
+                <input className="form-input" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">メールアドレス</label>
+                <input className="form-input" type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">インボイス番号</label>
+                <input className="form-input" value={form.invoice_number} onChange={e => setForm({...form, invoice_number: e.target.value})} placeholder="T1234567890123" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">📱 LINE ユーザーID</label>
+                <input className="form-input" value={form.line_user_id || ''} onChange={e => setForm({...form, line_user_id: e.target.value})} placeholder="U1234abcd..." style={{ fontFamily: 'monospace', fontSize: 12 }} />
+                <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>LINE Bot管理画面のユーザーIDまたはグループID</div>
+              </div>
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label">メモ</label>
+                <textarea className="form-textarea" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', marginTop: 8 }}>
+              <div>
+                {client?.id && <button className="btn-danger" onClick={() => { onDelete(client.id); onClose(); }}>削除</button>}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="btn-secondary" onClick={onClose}>キャンセル</button>
+                <button className="btn-primary" onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Interactive Task Management Tab ──
+    function TasksTab() {
+      const [tasks, setTasks] = React.useState([]);
+      const [clients, setClients] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+      const [showModal, setShowModal] = React.useState(false);
+      const [editTask, setEditTask] = React.useState(null);
+      const [filterStatus, setFilterStatus] = React.useState('all');
+      const [filterAgent, setFilterAgent] = React.useState('all');
+      const [filterClient, setFilterClient] = React.useState('all');
+
+      const fetchData = async () => {
+        try {
+          const [tasksRes, clientsRes] = await Promise.all([
+            fetch(`${API}/api/tasks/manage`).then(r => r.ok ? r.json() : fetch(`${API}/api/tasks`).then(r2 => r2.json())),
+            fetch(`${API}/api/clients`).then(r => r.ok ? r.json() : {clients:[]}).catch(() => ({clients:[]}))
+          ]);
+          const tArr = tasksRes.tasks || tasksRes || [];
+          setTasks(Array.isArray(tArr) ? tArr : []);
+          const cArr = clientsRes.clients || clientsRes || [];
+          setClients(Array.isArray(cArr) ? cArr : []);
+        } catch (e) {
+          try {
+            const res = await fetch(`${API}/api/tasks`);
+            if (res.ok) setTasks(await res.json());
+          } catch (e2) {}
+        }
+        setLoading(false);
+      };
+
+      React.useEffect(() => { fetchData(); }, []);
+
+      const updateTaskStatus = async (task, newStatus) => {
+        try {
+          await fetch(`${API}/api/tasks/manage`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...task, status: newStatus })
+          });
+          setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+        } catch (e) {
+          setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+        }
+      };
+
+      const nextStatus = (status) => {
+        if (status === 'pending') return 'in_progress';
+        if (status === 'in_progress') return 'done';
+        return 'pending';
+      };
+
+      const filtered = tasks.filter(t => {
+        if (filterStatus !== 'all' && t.status !== filterStatus) return false;
+        if (filterAgent !== 'all' && t.agent_id !== filterAgent) return false;
+        if (filterClient !== 'all' && t.client_id !== filterClient) return false;
+        return true;
+      });
+
+      return (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1F4E79' }}>タスク管理</h1>
+            <button className="btn-primary" onClick={() => { setEditTask(null); setShowModal(true); }}>＋ 新規タスク</button>
+          </div>
+          {/* Filters */}
+          <div className="tab-filter">
+            <button className={filterStatus === 'all' ? 'active' : ''} onClick={() => setFilterStatus('all')}>すべて ({tasks.length})</button>
+            <button className={filterStatus === 'pending' ? 'active' : ''} onClick={() => setFilterStatus('pending')}>未着手 ({tasks.filter(t=>t.status==='pending').length})</button>
+            <button className={filterStatus === 'in_progress' ? 'active' : ''} onClick={() => setFilterStatus('in_progress')}>処理中 ({tasks.filter(t=>t.status==='in_progress').length})</button>
+            <button className={filterStatus === 'done' ? 'active' : ''} onClick={() => setFilterStatus('done')}>完了 ({tasks.filter(t=>t.status==='done').length})</button>
+            <select className="form-select" value={filterAgent} onChange={e => setFilterAgent(e.target.value)} style={{ width: 'auto', padding: '5px 10px', fontSize: 12, borderRadius: 20 }}>
+              <option value="all">全エージェント</option>
+              {Object.entries(ALL_AGENTS).map(([id, a]) => <option key={id} value={id}>{a.name}</option>)}
+            </select>
+          </div>
+          {loading ? (
+            <div style={{ color: '#64748B', textAlign: 'center', padding: 40 }}>読み込み中...</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {filtered.length === 0 ? (
+                <div style={{ color: '#94A3B8', textAlign: 'center', padding: 40 }}>タスクがありません</div>
+              ) : filtered.map(task => (
+                <div key={task.id} className={`task-card priority-${task.priority || 'medium'}`}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button onClick={() => updateTaskStatus(task, nextStatus(task.status))}
+                      style={{ width: 28, height: 28, borderRadius: '50%', border: `2px solid ${TASK_STATUS_COLOR[task.status]}`, background: task.status === 'done' ? '#22C55E' : 'transparent', color: task.status === 'done' ? '#fff' : TASK_STATUS_COLOR[task.status], display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 12, fontWeight: 700 }}>
+                      {task.status === 'done' ? '✓' : task.status === 'in_progress' ? '▶' : '○'}
+                    </button>
+                    <div style={{ flex: 1 }} onClick={() => { setEditTask(task); setShowModal(true); }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, textDecoration: task.status === 'done' ? 'line-through' : 'none', color: task.status === 'done' ? '#94A3B8' : '#1A202C', cursor: 'pointer' }}>{task.title}</div>
+                      {task.description && <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{task.description}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                      {task.priority && <span className={`badge badge-${task.priority === 'high' ? 'red' : task.priority === 'medium' ? 'orange' : 'green'}`}>優先度{PRIORITY_LABEL[task.priority]}</span>}
+                      <span className="badge badge-blue">{task.agent_name || ALL_AGENTS[task.agent_id]?.name || '-'}</span>
+                      <span className={`badge badge-${task.status === 'done' ? 'green' : task.status === 'in_progress' ? 'orange' : 'gray'}`}>{TASK_STATUS_LABEL[task.status]}</span>
+                      {task.deadline && <span style={{ color: '#94A3B8', fontSize: 12 }}>期限 {task.deadline}</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {showModal && <TaskModal task={editTask} clients={clients} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchData(); }} />}
+        </>
+      );
+    }
+
+    // ── Task Modal ──
+    function TaskModal({ task, clients, onClose, onSaved }) {
+      const [form, setForm] = React.useState({
+        title: '', description: '', agent_id: 'hisho', client_id: '', priority: 'medium', deadline: '', status: 'pending',
+        ...(task || {})
+      });
+      const [saving, setSaving] = React.useState(false);
+
+      const handleSave = async () => {
+        if (!form.title.trim()) return alert('タスク名は必須です');
+        setSaving(true);
+        try {
+          const method = task?.id ? 'PUT' : 'POST';
+          const res = await fetch(`${API}/api/tasks/manage`, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(form)
+          });
+          if (res.ok) onSaved();
+          else alert('保存に失敗しました');
+        } catch (e) { alert('保存エラー: ' + e.message); }
+        setSaving(false);
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal-box modal-large" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 17, fontWeight: 700 }}>{task?.id ? 'タスク編集' : '新規タスク作成'}</div>
+              <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, color: '#94A3B8' }}>✕</button>
+            </div>
+            <div className="form-group">
+              <label className="form-label">タスク名 *</label>
+              <input className="form-input" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">説明</label>
+              <textarea className="form-textarea" value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+              <div className="form-group">
+                <label className="form-label">担当エージェント</label>
+                <select className="form-select" value={form.agent_id} onChange={e => setForm({...form, agent_id: e.target.value})}>
+                  {Object.entries(ALL_AGENTS).map(([id, a]) => <option key={id} value={id}>{a.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">顧問先</label>
+                <select className="form-select" value={form.client_id || ''} onChange={e => setForm({...form, client_id: e.target.value})}>
+                  <option value="">未設定</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">優先度</label>
+                <select className="form-select" value={form.priority} onChange={e => setForm({...form, priority: e.target.value})}>
+                  <option value="high">高</option>
+                  <option value="medium">中</option>
+                  <option value="low">低</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">期限</label>
+                <input className="form-input" type="date" value={form.deadline || ''} onChange={e => setForm({...form, deadline: e.target.value})} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+              <button className="btn-secondary" onClick={onClose}>キャンセル</button>
+              <button className="btn-primary" onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Calendar Tab ──
+    function CalendarTab() {
+      const [year, setYear] = React.useState(new Date().getFullYear());
+      const [month, setMonth] = React.useState(new Date().getMonth() + 1);
+      const [deadlines, setDeadlines] = React.useState([]);
+      const [selectedDay, setSelectedDay] = React.useState(null);
+      const [loading, setLoading] = React.useState(true);
+
+      const fetchDeadlines = async () => {
+        setLoading(true);
+        try {
+          const res = await fetch(`${API}/api/calendar/month/${year}/${month}`);
+          if (res.ok) {
+            const data = await res.json();
+            setDeadlines(data.deadlines || data || []);
+          }
+        } catch (e) { console.log('カレンダー取得エラー:', e); }
+        setLoading(false);
+      };
+
+      React.useEffect(() => { fetchDeadlines(); }, [year, month]);
+
+      const prevMonth = () => {
+        if (month === 1) { setMonth(12); setYear(year - 1); }
+        else setMonth(month - 1);
+      };
+      const nextMonth = () => {
+        if (month === 12) { setMonth(1); setYear(year + 1); }
+        else setMonth(month + 1);
+      };
+
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+      // Build calendar days
+      const firstDay = new Date(year, month - 1, 1);
+      const lastDay = new Date(year, month, 0);
+      const startDow = firstDay.getDay(); // 0=Sun
+      const daysInMonth = lastDay.getDate();
+      const prevLastDay = new Date(year, month - 1, 0).getDate();
+
+      const days = [];
+      // Previous month fill
+      for (let i = startDow - 1; i >= 0; i--) {
+        days.push({ day: prevLastDay - i, inMonth: false, date: null });
+      }
+      // Current month
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        days.push({ day: d, inMonth: true, date: dateStr });
+      }
+      // Next month fill
+      const remaining = 7 - (days.length % 7);
+      if (remaining < 7) {
+        for (let i = 1; i <= remaining; i++) {
+          days.push({ day: i, inMonth: false, date: null });
+        }
+      }
+
+      const getDeadlinesForDay = (dateStr) => {
+        if (!dateStr) return [];
+        return deadlines.filter(d => (d.deadline_date || d.due_date || '') === dateStr);
+      };
+
+      const getDeadlineClass = (d) => {
+        const deadlineDate = new Date(d.deadline_date || d.due_date);
+        const diff = (deadlineDate - today) / (1000 * 60 * 60 * 24);
+        if (diff < 0) return 'overdue';
+        if (diff <= 7) return 'soon';
+        return 'future';
+      };
+
+      const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+
+      return (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1F4E79' }}>申告カレンダー</h1>
+            <button className="btn-primary" onClick={async () => {
+              try {
+                const clientsRes = await fetch(`${API}/api/clients`);
+                const clsData = await clientsRes.json();
+                const cls = clsData.clients || clsData || [];
+                for (const c of cls) {
+                  await fetch(`${API}/api/clients/${c.id}/generate-deadlines`, { method: 'POST' });
+                }
+                fetchDeadlines();
+                alert('期限を自動生成しました');
+              } catch (e) { alert('生成エラー: ' + e.message); }
+            }}>🔄 期限自動生成</button>
+          </div>
+          {/* Month navigation */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+            <button onClick={prevMonth} className="btn-secondary" style={{ padding: '6px 12px' }}>◀</button>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#1F4E79' }}>{year}年 {month}月</div>
+            <button onClick={nextMonth} className="btn-secondary" style={{ padding: '6px 12px' }}>▶</button>
+            <button onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth() + 1); }} className="btn-secondary" style={{ padding: '6px 12px', marginLeft: 8 }}>今月</button>
+          </div>
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 12 }}>
+            <span><span className="deadline-pill overdue" style={{ marginRight: 4 }}>●</span>期限超過</span>
+            <span><span className="deadline-pill soon" style={{ marginRight: 4 }}>●</span>7日以内</span>
+            <span><span className="deadline-pill future" style={{ marginRight: 4 }}>●</span>今後の期限</span>
+          </div>
+          {/* Calendar grid */}
+          <div className="calendar-grid">
+            {dayNames.map((dn, i) => <div key={dn} className="day-header" style={{ color: i === 0 ? '#EF4444' : i === 6 ? '#3B82F6' : '#64748B' }}>{dn}</div>)}
+            {days.map((d, i) => {
+              const dow = i % 7;
+              const dayDeadlines = getDeadlinesForDay(d.date);
+              const isToday = d.date === todayStr;
+              return (
+                <div key={i}
+                  className={`day-cell ${d.inMonth ? '' : 'other-month'} ${isToday ? 'today' : ''} ${dow === 0 ? 'sunday' : ''} ${dow === 6 ? 'saturday' : ''}`}
+                  onClick={() => d.inMonth && dayDeadlines.length > 0 && setSelectedDay({ date: d.date, deadlines: dayDeadlines })}>
+                  <div className="day-num">{d.day}</div>
+                  {dayDeadlines.slice(0, 3).map((dl, j) => (
+                    <div key={j} className={`deadline-pill ${getDeadlineClass(dl)}`}>{dl.deadline_type || dl.title || '期限'}</div>
+                  ))}
+                  {dayDeadlines.length > 3 && <div style={{ fontSize: 10, color: '#94A3B8' }}>+{dayDeadlines.length - 3}件</div>}
+                </div>
+              );
+            })}
+          </div>
+          {/* Day detail modal */}
+          {selectedDay && (
+            <div className="modal-overlay" onClick={() => setSelectedDay(null)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div style={{ fontSize: 17, fontWeight: 700 }}>📅 {selectedDay.date} の期限</div>
+                  <button onClick={() => setSelectedDay(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, color: '#94A3B8' }}>✕</button>
+                </div>
+                {selectedDay.deadlines.map((dl, i) => (
+                  <div key={i} style={{ padding: '10px 14px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span className={`deadline-pill ${getDeadlineClass(dl)}`} style={{ flexShrink: 0 }}>{dl.deadline_type || dl.type || '期限'}</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{dl.deadline_type || dl.title || ''}</div>
+                      {dl.client_name && <div style={{ fontSize: 12, color: '#64748B' }}>{dl.client_name}</div>}
+                      {dl.description && <div style={{ fontSize: 12, color: '#94A3B8' }}>{dl.description}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    // ── Checklists Tab ──
+    function ChecklistsTab() {
+      const [checklists, setChecklists] = React.useState([]);
+      const [selectedChecklist, setSelectedChecklist] = React.useState(null);
+      const [showTemplateDropdown, setShowTemplateDropdown] = React.useState(false);
+      const [loading, setLoading] = React.useState(true);
+
+      const fetchChecklists = async () => {
+        try {
+          const res = await fetch(`${API}/api/checklists`);
+          if (res.ok) { const d = await res.json(); setChecklists(d.checklists || d || []); }
+        } catch (e) { console.log('チェックリスト取得エラー:', e); }
+        setLoading(false);
+      };
+
+      React.useEffect(() => { fetchChecklists(); }, []);
+
+      const createFromTemplate = async (templateKey) => {
+        const template = CHECKLIST_TEMPLATES[templateKey];
+        if (!template) return;
+        setShowTemplateDropdown(false);
+        try {
+          const res = await fetch(`${API}/api/checklists`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              template_type: templateKey,
+              title: template.name,
+              items: template.items
+            })
+          });
+          if (res.ok) fetchChecklists();
+        } catch (e) { alert('作成エラー: ' + e.message); }
+      };
+
+      const toggleItem = async (checklistId, itemId) => {
+        try {
+          await fetch(`${API}/api/checklists/${checklistId}/items/${itemId}/toggle`, { method: 'PUT' });
+          // Optimistic update
+          setChecklists(prev => prev.map(cl => {
+            if (cl.id === checklistId) {
+              return {
+                ...cl,
+                items: cl.items.map(item =>
+                  (item.id === itemId) ? { ...item, done: !item.is_checked } : item
+                )
+              };
+            }
+            return cl;
+          }));
+          if (selectedChecklist?.id === checklistId) {
+            setSelectedChecklist(prev => ({
+              ...prev,
+              items: prev.items.map(item =>
+                (item.id === itemId) ? { ...item, done: !item.is_checked } : item
+              )
+            }));
+          }
+        } catch (e) { console.log('トグルエラー:', e); }
+      };
+
+      const getProgress = (cl) => {
+        if (!cl.items || cl.items.length === 0) return 0;
+        return Math.round((cl.items.filter(i => i.is_checked).length / cl.items.length) * 100);
+      };
+
+      if (selectedChecklist) {
+        const cl = checklists.find(c => c.id === selectedChecklist.id) || selectedChecklist;
+        const progress = getProgress(cl);
+        return (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+              <button className="btn-secondary" onClick={() => setSelectedChecklist(null)} style={{ padding: '6px 12px' }}>← 戻る</button>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1F4E79' }}>{cl.title || cl.name}</h1>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748B', marginBottom: 4 }}>
+                <span>{cl.items?.filter(i => i.is_checked).length || 0} / {cl.items?.length || 0} 完了</span>
+                <span>{progress}%</span>
+              </div>
+              <div className="progress-bar"><div className="progress-bar-fill" style={{ width: `${progress}%` }} /></div>
+            </div>
+            <div className="section-card">
+              {(cl.items || []).map((item, i) => (
+                <div key={item.id || i} className={`checklist-item ${item.is_checked ? 'done' : ''}`} onClick={() => toggleItem(cl.id, item.id)}>
+                  <div className={`checklist-checkbox ${item.is_checked ? 'checked' : ''}`}>
+                    {item.is_checked && '✓'}
+                  </div>
+                  <span className="checklist-label" style={{ flex: 1 }}>{item.item_text || item.text}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        );
+      }
+
+      return (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1F4E79' }}>チェックリスト</h1>
+            <div style={{ position: 'relative' }}>
+              <button className="btn-primary" onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}>＋ テンプレートから作成</button>
+              {showTemplateDropdown && (
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', border: '1px solid #E2E8F0', zIndex: 100, minWidth: 200 }}>
+                  {Object.entries(CHECKLIST_TEMPLATES).map(([key, tmpl]) => (
+                    <button key={key} onClick={() => createFromTemplate(key)}
+                      style={{ display: 'block', width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, color: '#334155', borderBottom: '1px solid #F1F5F9' }}
+                      onMouseEnter={e => e.target.style.background = '#F8FAFC'}
+                      onMouseLeave={e => e.target.style.background = 'none'}>
+                      {tmpl.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          {loading ? (
+            <div style={{ color: '#64748B', textAlign: 'center', padding: 40 }}>読み込み中...</div>
+          ) : checklists.length === 0 ? (
+            <div style={{ color: '#94A3B8', textAlign: 'center', padding: 40 }}>
+              チェックリストがありません。「テンプレートから作成」で新しいチェックリストを追加してください。
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+              {checklists.map(cl => {
+                const progress = getProgress(cl);
+                return (
+                  <div key={cl.id} className="client-card" onClick={() => setSelectedChecklist(cl)}>
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{cl.title || cl.name}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748B', marginBottom: 4 }}>
+                      <span>{cl.items?.filter(i => i.is_checked).length || 0} / {cl.items?.length || 0} 完了</span>
+                      <span style={{ color: progress === 100 ? '#22C55E' : '#64748B', fontWeight: 600 }}>{progress}%</span>
+                    </div>
+                    <div className="progress-bar"><div className="progress-bar-fill" style={{ width: `${progress}%` }} /></div>
+                    {cl.created_at && <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 8 }}>作成: {cl.created_at}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      );
+    }
+
+    // ── Settings Tab ──
+    function SettingsTab() {
+      const [quota, setQuota] = React.useState(null);
+      const [lineSettings, setLineSettings] = React.useState(() => {
+        try { return JSON.parse(localStorage.getItem('lineSettings') || '{}'); } catch(e) { return {}; }
+      });
+      const [showLineModal, setShowLineModal] = React.useState(false);
+      const [templates, setTemplates] = React.useState([]);
+      const [newTmpl, setNewTmpl] = React.useState({ name: '', subject: '', body: '', category: '一般' });
+      const [showTmplForm, setShowTmplForm] = React.useState(false);
+      const [notifLog, setNotifLog] = React.useState([]);
+      const [showLog, setShowLog] = React.useState(false);
+
+      const fetchTemplates = () => {
+        fetch(`${API}/api/email-templates`).then(r => r.ok ? r.json() : []).then(setTemplates).catch(() => {});
+      };
+
+      React.useEffect(() => {
+        fetch(`${API}/api/quota`).then(r => r.ok ? r.json() : null).then(setQuota).catch(() => {});
+        fetchTemplates();
+      }, []);
+
+      const saveTemplate = async () => {
+        if (!newTmpl.name.trim() || !newTmpl.subject.trim()) return alert('テンプレート名と件名は必須です');
+        try {
+          const res = await fetch(`${API}/api/email-templates`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newTmpl)
+          });
+          if (res.ok) {
+            setNewTmpl({ name: '', subject: '', body: '', category: '一般' });
+            setShowTmplForm(false);
+            fetchTemplates();
+          }
+        } catch(e) { alert('保存エラー'); }
+      };
+
+      const deleteTemplate = async (id) => {
+        if (!confirm('このテンプレートを削除しますか？')) return;
+        await fetch(`${API}/api/email-templates/${id}`, { method: 'DELETE' });
+        fetchTemplates();
+      };
+
+      const loadNotifLog = () => {
+        fetch(`${API}/api/notification-log`).then(r => r.ok ? r.json() : []).then(d => { setNotifLog(d); setShowLog(true); }).catch(() => {});
+      };
+
+      const saveLineSettings = (s) => {
+        setLineSettings(s);
+        try { localStorage.setItem('lineSettings', JSON.stringify(s)); } catch {}
+      };
+
+      const hasLine = lineSettings.channelToken && lineSettings.lineUserId;
+
+      return (
+        <>
+          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 24, color: '#1F4E79' }}>設定</h1>
+
+          {/* API接続状態 */}
+          <div className="settings-section">
+            <h3>🔌 API接続状態</h3>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13 }}>
+                <div style={{ color: '#64748B', marginBottom: 4 }}>AIプロバイダー</div>
+                <div style={{ fontWeight: 600 }}>{quota?.provider || 'Claude / Gemini'}</div>
+              </div>
+              <div style={{ fontSize: 13 }}>
+                <div style={{ color: '#64748B', marginBottom: 4 }}>バックエンド</div>
+                <div style={{ fontWeight: 600 }}><span className="status-dot online"></span>接続中 ({API})</div>
+              </div>
+              {quota && (
+                <>
+                  <div style={{ fontSize: 13 }}>
+                    <div style={{ color: '#64748B', marginBottom: 4 }}>使用量</div>
+                    <div style={{ fontWeight: 600 }}>{quota.used || 0} / {quota.limit || '無制限'}</div>
+                  </div>
+                  {quota.remaining !== undefined && (
+                    <div style={{ fontSize: 13 }}>
+                      <div style={{ color: '#64748B', marginBottom: 4 }}>残り</div>
+                      <div style={{ fontWeight: 600, color: quota.remaining < 100 ? '#EF4444' : '#22C55E' }}>{quota.remaining}</div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* LINE設定 */}
+          <div className="settings-section">
+            <h3>📱 LINE設定</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ fontSize: 13 }}>
+                <span className={`status-dot ${hasLine ? 'online' : 'offline'}`}></span>
+                {hasLine ? 'LINE Messaging API 接続済み' : 'LINE 未設定'}
+              </div>
+              <button className="btn-primary" onClick={() => setShowLineModal(true)} style={{ padding: '6px 16px', fontSize: 12 }}>
+                {hasLine ? '設定変更' : 'LINE設定'}
+              </button>
+            </div>
+            {hasLine && (
+              <div style={{ marginTop: 10, fontSize: 12, color: '#64748B' }}>
+                ユーザーID: {lineSettings.lineUserId?.slice(0, 8)}...
+              </div>
+            )}
+          </div>
+
+          {/* Gmail設定 */}
+          <div className="settings-section">
+            <h3>📧 Gmail設定</h3>
+            <div style={{ fontSize: 13, color: '#64748B' }}>
+              Gmailアドレスはサーバー環境変数（GMAIL_ADDRESS）で設定されています。セキュリティ上、ここでは変更できません。
+            </div>
+          </div>
+
+          {/* メールテンプレート管理 */}
+          <div className="settings-section">
+            <h3 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              📋 メールテンプレート
+              <button onClick={() => setShowTmplForm(!showTmplForm)}
+                style={{ background: '#2E75B6', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                {showTmplForm ? '✕ 閉じる' : '＋ 新規作成'}
+              </button>
+            </h3>
+
+            {showTmplForm && (
+              <div style={{ background: '#F8FAFC', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  <input className="form-input" value={newTmpl.name} onChange={e => setNewTmpl({...newTmpl, name: e.target.value})} placeholder="テンプレート名" style={{ fontSize: 12 }} />
+                  <select className="form-input" value={newTmpl.category} onChange={e => setNewTmpl({...newTmpl, category: e.target.value})} style={{ fontSize: 12 }}>
+                    <option value="一般">一般</option>
+                    <option value="書類依頼">書類依頼</option>
+                    <option value="期限通知">期限通知</option>
+                    <option value="案内">案内</option>
+                    <option value="お礼">お礼</option>
+                  </select>
+                </div>
+                <input className="form-input" value={newTmpl.subject} onChange={e => setNewTmpl({...newTmpl, subject: e.target.value})} placeholder="件名" style={{ fontSize: 12, marginBottom: 8 }} />
+                <textarea className="form-textarea" value={newTmpl.body} onChange={e => setNewTmpl({...newTmpl, body: e.target.value})} placeholder="本文" rows={4} style={{ fontSize: 12, marginBottom: 8 }} />
+                <button className="btn-primary" onClick={saveTemplate} style={{ fontSize: 12 }}>保存</button>
+              </div>
+            )}
+
+            {templates.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#94A3B8' }}>テンプレートはまだ登録されていません。</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {templates.map(t => (
+                  <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F8FAFC', borderRadius: 6, padding: '8px 12px' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name} <span className="badge badge-gray" style={{ fontSize: 10 }}>{t.category}</span></div>
+                      <div style={{ fontSize: 11, color: '#64748B' }}>{t.subject}</div>
+                    </div>
+                    <button onClick={() => deleteTemplate(t.id)}
+                      style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontSize: 14 }}>🗑</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 通知履歴 */}
+          <div className="settings-section">
+            <h3 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              📊 通知履歴
+              <button onClick={loadNotifLog}
+                style={{ background: '#F1F5F9', border: '1px solid #CBD5E0', borderRadius: 6, padding: '4px 12px', fontSize: 11, cursor: 'pointer' }}>
+                {showLog ? '更新' : '表示'}
+              </button>
+            </h3>
+            {showLog && (
+              notifLog.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#94A3B8' }}>通知履歴はありません。</div>
+              ) : (
+                <div style={{ maxHeight: 300, overflow: 'auto' }}>
+                  {notifLog.map(n => (
+                    <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '6px 0', borderBottom: '1px solid #F1F5F9' }}>
+                      <div>
+                        <span style={{ fontWeight: 600 }}>{n.client_name || 'ID:' + n.client_id}</span>
+                        <span style={{ color: '#64748B', marginLeft: 8 }}>{n.subject}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span>{n.channel?.includes('email') ? '✉️' : ''}{n.channel?.includes('line') ? '📱' : ''}</span>
+                        <span style={{ color: '#94A3B8', fontSize: 10 }}>{n.created_at?.slice(0, 16)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+
+          {/* ユーザー情報 */}
+          <div className="settings-section">
+            <h3>👤 ユーザー情報</h3>
+            <div style={{ fontSize: 13, color: '#64748B' }}>
+              税理士事務所 AIエージェント管理システム v0.5.0
+            </div>
+          </div>
+
+          {showLineModal && <LineSettingsModal settings={lineSettings} onSave={saveLineSettings} onClose={() => setShowLineModal(false)} />}
+        </>
+      );
+    }
+
+    // ── ChatBubble (legacy for SecretaryChat) ──
+    function ChatBubble({ msg, lineSettings, onLineSend }) {
+      const [lineSending, setLineSending] = React.useState(false);
+      const [lineSent, setLineSent] = React.useState(false);
+      const [lineError, setLineError] = React.useState('');
+      const [copied, setCopied] = React.useState(false);
+
+      const hasLineToken = lineSettings.channelToken && lineSettings.lineUserId;
+
+      const handleCopy = () => {
+        navigator.clipboard.writeText(msg.content).then(() => {
+          setCopied(true); setTimeout(() => setCopied(false), 2500);
+        }).catch(() => {
+          const ta = document.createElement('textarea');
+          ta.value = msg.content;
+          document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+          setCopied(true); setTimeout(() => setCopied(false), 2500);
+        });
+      };
+
+      const handleLineOpen = () => {
+        window.open(`https://line.me/R/msg/text/?${encodeURIComponent(msg.content)}`, '_blank');
+      };
+
+      const handleLineSend = async () => {
+        if (!hasLineToken || lineSending) return;
+        setLineSending(true); setLineError('');
+        try {
+          const res = await fetch(`${API}/api/line/push`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to: lineSettings.lineUserId, message: msg.content, channel_token: lineSettings.channelToken })
+          });
+          if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'LINE送信エラー'); }
+          setLineSent(true); setTimeout(() => setLineSent(false), 3000);
+        } catch(e) { setLineError(e.message); setTimeout(() => setLineError(''), 4000); }
+        finally { setLineSending(false); }
+      };
+
+      if (msg.role === 'user') return <div className="msg-user">{msg.content}</div>;
+      if (msg.role === 'thinking') return <div className="msg-thinking">🧠 <strong>思考中...</strong> {msg.content}</div>;
+      if (msg.role === 'tool_use') return <div className="msg-tool">🔧 <strong>ツール実行:</strong> {msg.content}</div>;
+      if (msg.role === 'error') return <div className="msg-error">⚠️ {msg.content}</div>;
+      if (msg.role === 'typing') return (
+        <div style={{ alignSelf: 'flex-start', background: '#fff', borderRadius: '16px 16px 16px 4px', padding: '12px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
+          <span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/>
+        </div>
+      );
+      return (
+        <div style={{ alignSelf: 'flex-start', display: 'flex', gap: 10, maxWidth: '82%' }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#2E75B6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0, marginTop: 4 }}>秘</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+            <div className="msg-assistant">{msg.content}</div>
+            {msg.content && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={handleCopy}
+                  style={{ border: '1px solid #CBD5E0', background: copied ? '#DCFCE7' : '#fff', color: copied ? '#166534' : '#334155', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s' }}>
+                  {copied ? '✓ コピー済み' : '📋 コピー'}
+                </button>
+                <button onClick={handleLineOpen}
+                  style={{ background: '#00B900', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700 }}>
+                  📱 LINEで送る
+                </button>
+                {hasLineToken && (lineSent
+                  ? <span className="line-sent">✓ Bot送信完了</span>
+                  : lineError
+                  ? <span style={{ fontSize: 11, color: '#DC2626' }}>⚠️ {lineError}</span>
+                  : <button className="line-btn" onClick={handleLineSend} disabled={lineSending} style={{ background: '#1D4ED8' }}>
+                      {lineSending ? '送信中...' : '🤖 Bot送信'}
+                    </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ── SecretaryChat (legacy, kept intact) ──
+    function SecretaryChat() {
+      const [messages, setMessages] = React.useState([
+        { id: 0, role: 'assistant', content: 'こんにちは！税理士事務所の秘書AIです。\n\n以下のことをお手伝いできます：\n\n📋 書類チェックリストの作成（法人税・所得税・相続税など）\n✉️ 顧客への連絡文書・メールの下書き\n🔍 問い合わせの整理・担当AI振り分け\n\nAIの回答は：\n・「📋 コピー」→ クリップボードにコピー\n・「📱 LINEで送る」→ LINEアプリが開いて送信できます（設定不要！）\n\n下のクイックボタンかメッセージを入力してお使いください。' }
+      ]);
+      const [input, setInput] = React.useState('');
+      const [isLoading, setIsLoading] = React.useState(false);
+      const [history, setHistory] = React.useState([]);
+      const [lineSettings, setLineSettings] = React.useState(() => {
+        try { return JSON.parse(localStorage.getItem('lineSettings') || '{}'); } catch { return {}; }
+      });
+      const [showLineModal, setShowLineModal] = React.useState(false);
+      const messagesEndRef = React.useRef(null);
+
+      React.useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+      const saveLineSettings = (s) => {
+        setLineSettings(s); try { localStorage.setItem('lineSettings', JSON.stringify(s)); } catch {}
+      };
+
+      const sendMessage = async (text) => {
+        if (!text.trim() || isLoading) return;
+        const userText = text.trim();
+        setInput(''); setIsLoading(true);
+        const userMsgId = Date.now();
+        setMessages(prev => [...prev, { id: userMsgId, role: 'user', content: userText }]);
+        const typingId = userMsgId + 1;
+        setMessages(prev => [...prev, { id: typingId, role: 'typing', content: '' }]);
+        let assistantText = '';
+        const assistantMsgId = userMsgId + 2;
+        try {
+          const res = await fetch(`${API}/api/agents/hisho/chat`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: userText, history })
+          });
+          if (!res.ok) throw new Error(`HTTPエラー: ${res.status}`);
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          setMessages(prev => prev.filter(m => m.id !== typingId).concat({ id: assistantMsgId, role: 'assistant', content: '' }));
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            for (const line of decoder.decode(value).split('\n')) {
+              if (!line.startsWith('data: ')) continue;
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.type === 'text') {
+                  assistantText += data.text;
+                  const captured = assistantText;
+                  setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, content: captured } : m));
+                } else if (data.type === 'thinking') {
+                  const thinkId = Date.now() + Math.random();
+                  setMessages(prev => {
+                    const filtered = prev.filter(m => m.id !== assistantMsgId);
+                    return [...filtered, { id: thinkId, role: 'thinking', content: data.thinking }, { id: assistantMsgId, role: 'assistant', content: assistantText }];
+                  });
+                } else if (data.type === 'tool_use') {
+                  const toolId = Date.now() + Math.random();
+                  const toolLabel = { generate_document_checklist: '📋 書類チェックリスト生成中...', classify_inquiry: '🔍 問い合わせ分類中...', draft_communication: '✉️ 文書下書き作成中...' }[data.tool] || `🔧 ${data.tool} 実行中...`;
+                  setMessages(prev => {
+                    const filtered = prev.filter(m => m.id !== assistantMsgId);
+                    return [...filtered, { id: toolId, role: 'tool_use', content: toolLabel }, { id: assistantMsgId, role: 'assistant', content: assistantText }];
+                  });
+                } else if (data.type === 'error') {
+                  setMessages(prev => prev.filter(m => m.id !== typingId).concat({ id: assistantMsgId, role: 'error', content: data.error }));
+                }
+              } catch {}
+            }
+          }
+          setHistory(prev => [...prev, { role: 'user', content: userText }, { role: 'assistant', content: assistantText }]);
+        } catch (err) {
+          setMessages(prev => prev.filter(m => m.id !== typingId).concat({ id: assistantMsgId, role: 'error', content: `接続エラー: ${err.message}\nANTHROPIC_API_KEYが設定されているか確認してください。` }));
+        } finally { setIsLoading(false); }
+      };
+
+      const handleKeyDown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); } };
+      const hasLine = lineSettings.channelToken && lineSettings.lineUserId;
+
+      return (
+        <div className="chat-container">
+          {showLineModal && <LineSettingsModal settings={lineSettings} onSave={saveLineSettings} onClose={() => setShowLineModal(false)} />}
+          <div style={{ background: '#fff', padding: '12px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#2E75B6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700 }}>秘</div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#1F4E79' }}>秘書AI エージェント</div>
+                <div style={{ fontSize: 11, color: '#22C55E' }}>● Claude Opus 4.6 · Adaptive Thinking</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ fontSize: 11, color: hasLine ? '#00B900' : '#94A3B8', fontWeight: 600 }}>{hasLine ? '📱 LINE接続済' : '📱 LINE未設定'}</div>
+              <button onClick={() => setShowLineModal(true)} style={{ background: hasLine ? '#00B900' : '#F1F5F9', color: hasLine ? '#fff' : '#334155', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>LINE設定</button>
+              <button onClick={() => { setMessages([{ id: 0, role: 'assistant', content: '会話をリセットしました。' }]); setHistory([]); }}
+                style={{ border: '1px solid #E2E8F0', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: '#64748B' }}>🗑 リセット</button>
+            </div>
+          </div>
+          <div style={{ padding: '8px 16px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
+            {QUICK_ACTIONS.map((qa, i) => (
+              <button key={i} onClick={() => sendMessage(qa.text)} disabled={isLoading}
+                style={{ border: '1px solid #CBD5E0', background: '#fff', borderRadius: 20, padding: '5px 12px', fontSize: 11, cursor: 'pointer', color: '#334155', transition: 'all 0.15s', whiteSpace: 'nowrap', opacity: isLoading ? 0.5 : 1 }}>
+                {qa.label}
+              </button>
+            ))}
+          </div>
+          <div className="chat-messages">
+            {messages.map(msg => <ChatBubble key={msg.id} msg={msg} lineSettings={lineSettings} onLineSend={() => setShowLineModal(true)} />)}
+            <div ref={messagesEndRef} />
+          </div>
+          <div style={{ padding: '12px 16px', background: '#fff', borderTop: '1px solid #E2E8F0', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+            <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
+              placeholder="メッセージを入力...（Enterで送信、Shift+Enterで改行）" disabled={isLoading} rows={1}
+              style={{ flex: 1, border: '1px solid #CBD5E0', borderRadius: 10, padding: '10px 14px', fontSize: 14, fontFamily: 'inherit', resize: 'none', outline: 'none', minHeight: 44, lineHeight: 1.5 }}
+              onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }}
+            />
+            <button onClick={() => sendMessage(input)} disabled={isLoading || !input.trim()}
+              style={{ background: isLoading || !input.trim() ? '#94A3B8' : '#1F4E79', color: '#fff', border: 'none', borderRadius: 10, padding: '0 20px', cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 700, height: 44, minWidth: 76 }}>
+              {isLoading ? '...' : '送信'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Enhanced Dashboard ──
+    function DashboardContent({ stats, tasks }) {
+      const [weekDeadlines, setWeekDeadlines] = React.useState([]);
+      const [recentClients, setRecentClients] = React.useState([]);
+      const [checklists, setChecklists] = React.useState([]);
+
+      React.useEffect(() => {
+        fetch(`${API}/api/calendar?days=7`).then(r => r.ok ? r.json() : {deadlines:[]}).then(d => setWeekDeadlines(d.deadlines || [])).catch(() => {});
+        fetch(`${API}/api/clients`).then(r => r.ok ? r.json() : {clients:[]}).then(d => setRecentClients((d.clients || []).slice(0, 5))).catch(() => {});
+        fetch(`${API}/api/checklists`).then(r => r.ok ? r.json() : {checklists:[]}).then(d => setChecklists(d.checklists || [])).catch(() => {});
+      }, []);
+
+      const checklistCompletion = React.useMemo(() => {
+        if (checklists.length === 0) return 0;
+        let total = 0, done = 0;
+        checklists.forEach(cl => {
+          (cl.items || []).forEach(item => { total++; if (item.is_checked) done++; });
+        });
+        return total > 0 ? Math.round((done / total) * 100) : 0;
+      }, [checklists]);
+
+      return (
+        <>
+          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 24, color: '#1F4E79' }}>ダッシュボード</h1>
+          {stats && (
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 32 }}>
+              <StatCard label="総エージェント数" value={stats.total_agents} color="#1F4E79" />
+              <StatCard label="稼働中" value={stats.active_agents} sub="アクティブ" color="#22C55E" />
+              <StatCard label="処理中" value={stats.busy_agents} sub="ビジー" color="#F59E0B" />
+              <StatCard label="完了タスク総数" value={stats.tasks_completed_total} color="#2E75B6" />
+              <StatCard label="未処理タスク" value={stats.tasks_pending_total} sub="要対応" color="#EF4444" />
+              <StatCard label="チェックリスト進捗" value={`${checklistCompletion}%`} sub={`${checklists.length}件`} color="#6E2FBB" />
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 32 }}>
+            {/* 今週の期限 */}
+            <div className="section-card">
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid #E2E8F0', fontWeight: 700, fontSize: 15, color: '#1F4E79' }}>📅 今週の期限</div>
+              {weekDeadlines.length === 0 ? (
+                <div style={{ padding: 20, color: '#94A3B8', textAlign: 'center', fontSize: 13 }}>今週の期限はありません</div>
+              ) : weekDeadlines.slice(0, 5).map((d, i) => (
+                <div key={i} style={{ padding: '10px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className={`deadline-pill ${new Date(d.deadline_date || d.due_date) < new Date() ? 'overdue' : 'soon'}`}>{d.deadline_date || d.due_date || ''}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{d.deadline_type || d.title || ''}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* 最近の顧問先 */}
+            <div className="section-card">
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid #E2E8F0', fontWeight: 700, fontSize: 15, color: '#1F4E79' }}>👥 最近の顧問先</div>
+              {recentClients.length === 0 ? (
+                <div style={{ padding: 20, color: '#94A3B8', textAlign: 'center', fontSize: 13 }}>顧問先が登録されていません</div>
+              ) : recentClients.map((c, i) => (
+                <div key={i} style={{ padding: '10px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: '#64748B' }}>{c.representative}</div>
+                  </div>
+                  <span className={`badge ${c.client_type === '法人' ? 'badge-blue' : 'badge-green'}`}>{c.client_type || '法人'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 14, color: '#334155' }}>直近のタスク</h2>
+          <div className="section-card">
+            {tasks.filter(t => t.status !== 'done').slice(0, 6).map(t => <TaskRow key={t.id} task={t} />)}
+            {tasks.filter(t => t.status !== 'done').length === 0 && (
+              <div style={{ padding: 24, color: '#94A3B8', textAlign: 'center' }}>未処理のタスクはありません</div>
+            )}
+          </div>
+        </>
+      );
+    }
+
+    // ── Main App ──
+    function App() {
+      const [agents, setAgents] = React.useState([]);
+      const [tasks, setTasks] = React.useState([]);
+      const [stats, setStats] = React.useState(null);
+      const [selectedAgent, setSelectedAgent] = React.useState(null);
+      const [loading, setLoading] = React.useState(true);
+      const [error, setError] = React.useState(null);
+      const [activeTab, setActiveTab] = React.useState('dashboard');
+
+      React.useEffect(() => {
+        Promise.all([
+          fetch(`${API}/api/agents`).then(r => r.json()),
+          fetch(`${API}/api/tasks`).then(r => r.json()),
+          fetch(`${API}/api/stats`).then(r => r.json()),
+        ]).then(([a, t, s]) => { setAgents(a); setTasks(t); setStats(s); setLoading(false); })
+          .catch(() => { setError('バックエンドAPIに接続できません（port 8000）'); setLoading(false); });
+      }, []);
+
+      const filteredTasks = selectedAgent ? tasks.filter(t => t.agent_id === selectedAgent) : tasks;
+
+      const NavBtn = ({ label, tabKey }) => (
+        <button onClick={() => setActiveTab(tabKey)}
+          className={`nav-btn ${activeTab === tabKey ? 'active' : ''}`}>
+          {label}
+        </button>
+      );
+
+      const isAgentTab = Object.keys(ALL_AGENTS).includes(activeTab);
+      const isContentTab = ['dashboard', 'agents', 'tasks', 'clients', 'calendar', 'checklists', 'settings'].includes(activeTab);
+
+      return (
+        <div style={{ display: 'flex', minHeight: '100vh' }}>
+          {/* Sidebar */}
+          <aside style={{ width: 220, background: '#0F2744', color: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+            <div style={{ padding: '28px 20px 16px' }}>
+              <div style={{ fontSize: 11, color: '#60A5FA', fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>税理士事務所</div>
+              <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.4 }}>AI エージェント<br />管理ダッシュボード</div>
+            </div>
+            <hr style={{ border: 'none', borderTop: '1px solid #1E3A5F', margin: '0 16px 12px' }} />
+            <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 12px', flex: 1, overflowY: 'auto' }}>
+              <NavBtn label="📊 ダッシュボード" tabKey="dashboard" />
+              <NavBtn label="🤖 エージェント一覧" tabKey="agents" />
+              <NavBtn label="📋 タスク一覧" tabKey="tasks" />
+              <div style={{ borderTop: '1px solid #1E3A5F', margin: '8px 4px', opacity: 0.5 }} />
+              <div style={{ fontSize: 10, color: '#475569', padding: '2px 8px', letterSpacing: 1 }}>管理機能</div>
+              <NavBtn label="👥 顧問先管理" tabKey="clients" />
+              <NavBtn label="📅 申告カレンダー" tabKey="calendar" />
+              <NavBtn label="✅ チェックリスト" tabKey="checklists" />
+              <div style={{ borderTop: '1px solid #1E3A5F', margin: '8px 4px', opacity: 0.5 }} />
+              <div style={{ fontSize: 10, color: '#475569', padding: '2px 8px', letterSpacing: 1 }}>AI エージェント</div>
+              {Object.entries(ALL_AGENTS).map(([id, a]) => (
+                <NavBtn key={id} label={`${a.label} ${a.name}`} tabKey={id} />
+              ))}
+              <div style={{ borderTop: '1px solid #1E3A5F', margin: '8px 4px', opacity: 0.5 }} />
+              <NavBtn label="⚙️ 設定" tabKey="settings" />
+            </nav>
+            <div style={{ padding: '16px 20px', fontSize: 11, color: '#475569' }}>v0.5.0 — {new Date().toLocaleDateString('ja-JP')}</div>
+          </aside>
+
+          {/* Main area */}
+          <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Agent chat tabs */}
+            {Object.entries(ALL_AGENTS).map(([id, a]) =>
+              activeTab === id ? (
+                <AgentChat
+                  key={id}
+                  agentId={id}
+                  agentName={`${a.name} エージェント`}
+                  agentColor={a.color}
+                  agentInitial={a.initial}
+                  modelLabel="Claude Opus 4.6 · Adaptive Thinking"
+                  quickActions={AGENT_QUICK_ACTIONS[id] || []}
+                  apiPath={a.path}
+                />
+              ) : null
+            )}
+
+            {/* Content tabs */}
+            {isContentTab && (
+              <div style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
+                {loading && activeTab !== 'clients' && activeTab !== 'calendar' && activeTab !== 'checklists' && activeTab !== 'settings' && (
+                  <div style={{ color: '#64748B', fontSize: 16, marginTop: 40, textAlign: 'center' }}>読み込み中...</div>
+                )}
+                {error && activeTab === 'dashboard' && (
+                  <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626', borderRadius: 10, padding: '16px 20px', marginBottom: 24 }}>⚠️ {error}</div>
+                )}
+
+                {activeTab === 'dashboard' && !loading && (
+                  <DashboardContent stats={stats} tasks={tasks} />
+                )}
+
+                {activeTab === 'agents' && !loading && (
+                  <>
+                    <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, color: '#1F4E79' }}>エージェント一覧</h1>
+                    <p style={{ color: '#64748B', fontSize: 13, marginBottom: 20 }}>クリックで担当タスクを絞り込み</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12, marginBottom: 28 }}>
+                      {agents.map(a => (
+                        <AgentCard key={a.id} agent={a} selected={selectedAgent === a.id}
+                          onClick={() => setSelectedAgent(selectedAgent === a.id ? null : a.id)} />
+                      ))}
+                    </div>
+                    {selectedAgent && (
+                      <>
+                        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 14, color: '#334155' }}>
+                          {agents.find(a => a.id === selectedAgent)?.name} の担当タスク
+                        </h2>
+                        <div className="section-card">
+                          {filteredTasks.length === 0
+                            ? <div style={{ padding: 24, color: '#94A3B8', textAlign: 'center' }}>タスクなし</div>
+                            : filteredTasks.map(t => <TaskRow key={t.id} task={t} />)}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {activeTab === 'tasks' && <TasksTab />}
+
+                {activeTab === 'clients' && <ClientsTab />}
+
+                {activeTab === 'calendar' && <CalendarTab />}
+
+                {activeTab === 'checklists' && <ChecklistsTab />}
+
+                {activeTab === 'settings' && <SettingsTab />}
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
