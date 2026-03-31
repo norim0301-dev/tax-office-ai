@@ -1,5 +1,11 @@
+import sys
+import os
+
+# backend/ ディレクトリをPythonパスに追加
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +14,6 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
 import random
-import os
 import urllib.request
 import urllib.parse
 import json
