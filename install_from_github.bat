@@ -163,9 +163,24 @@ echo  Ctrl+S で保存してから、メモ帳を閉じてください。
 echo.
 echo  （APIキーは https://aistudio.google.com/apikey で無料取得できます）
 echo.
-pause
+echo  何かキーを押すとメモ帳が開きます...
+pause > nul
 
-notepad backend\.env
+:: 絶対パスでメモ帳を開く
+cd /d "%INSTALL_DIR%"
+if exist "%INSTALL_DIR%\backend\.env" (
+    notepad "%INSTALL_DIR%\backend\.env"
+) else (
+    echo  [エラー] 設定ファイルが見つかりません。
+    echo  手動で作成します...
+    (
+        echo ANTHROPIC_API_KEY=
+        echo GOOGLE_API_KEY=
+        echo GMAIL_ADDRESS=
+        echo GMAIL_APP_PASSWORD=
+    ) > "%INSTALL_DIR%\backend\.env"
+    notepad "%INSTALL_DIR%\backend\.env"
+)
 
 echo.
 echo  ╔══════════════════════════════════════════════════════╗
