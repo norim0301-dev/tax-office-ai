@@ -195,6 +195,54 @@ def init_db() -> None:
             )
         """)
 
+        # document_templates - 書類テンプレート管理
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS document_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                category TEXT,
+                source TEXT,
+                file_type TEXT,
+                file_path TEXT,
+                field_schema TEXT,
+                description TEXT,
+                tags TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # document_instances - 書類作成インスタンス
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS document_instances (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id INTEGER,
+                client_id INTEGER,
+                title TEXT NOT NULL,
+                field_data TEXT,
+                status TEXT DEFAULT 'draft',
+                output_file_path TEXT,
+                memo TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (template_id) REFERENCES document_templates(id),
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            )
+        """)
+
+        # template_field_mappings - テンプレートフィールドマッピング
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS template_field_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id INTEGER,
+                field_name TEXT,
+                client_column TEXT,
+                transform TEXT,
+                FOREIGN KEY (template_id) REFERENCES document_templates(id)
+            )
+        """)
+
         # clients テーブルに line_user_id カラムを追加（存在しなければ）
         try:
             cur.execute("ALTER TABLE clients ADD COLUMN line_user_id TEXT")
@@ -210,6 +258,11 @@ def init_db() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_deadlines_client ON deadlines(client_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_checklist_items_checklist ON checklist_items(checklist_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_document_templates_category ON document_templates(category)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_document_instances_template ON document_instances(template_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_document_instances_client ON document_instances(client_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_document_instances_status ON document_instances(status)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_template_field_mappings_template ON template_field_mappings(template_id)")
 
         conn.commit()
     except Exception as e:

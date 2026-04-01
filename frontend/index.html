@@ -1521,6 +1521,410 @@
       );
     }
 
+    // ── Documents Tab ──
+    function DocumentsTab() {
+      const CATEGORIES = ['全て', '年金機構', '税務署', '労基署', '市区町村', '社内', 'その他'];
+      const CATEGORY_COLORS = { '年金機構': '#3B82F6', '税務署': '#EF4444', '労基署': '#F59E0B', '市区町村': '#22C55E', '社内': '#8B5CF6', 'その他': '#6B7280' };
+      const FIELD_TYPES = ['text', 'date', 'number', 'select', 'textarea'];
+      const DOC_STATUS_LABEL = { draft: '下書き', completed: '完了', submitted: '提出済' };
+      const DOC_STATUS_COLOR = { draft: '#F59E0B', completed: '#22C55E', submitted: '#3B82F6' };
+
+      const [subView, setSubView] = React.useState('templates'); // templates | documents | formfill
+      const [templates, setTemplates] = React.useState([]);
+      const [documents, setDocuments] = React.useState([]);
+      const [clients, setClients] = React.useState([]);
+      const [search, setSearch] = React.useState('');
+      const [catFilter, setCatFilter] = React.useState('全て');
+      const [showModal, setShowModal] = React.useState(false);
+      const [editTemplate, setEditTemplate] = React.useState(null);
+      const [loading, setLoading] = React.useState(true);
+
+      // Document list filters
+      const [docClientFilter, setDocClientFilter] = React.useState('');
+      const [docTemplateFilter, setDocTemplateFilter] = React.useState('');
+      const [docStatusFilter, setDocStatusFilter] = React.useState('');
+
+      // Form fill state
+      const [formTemplateId, setFormTemplateId] = React.useState('');
+      const [formClientId, setFormClientId] = React.useState('');
+      const [formData, setFormData] = React.useState({});
+      const [formEditDocId, setFormEditDocId] = React.useState(null);
+      const [autoFilling, setAutoFilling] = React.useState(false);
+
+      const fetchTemplates = async () => {
+        try {
+          const res = await fetch(`${API}/api/templates`);
+          if (res.ok) { const d = await res.json(); setTemplates(d.templates || d || []); }
+        } catch (e) { console.log('テンプレート取得エラー:', e); }
+        setLoading(false);
+      };
+
+      const fetchDocuments = async () => {
+        try {
+          const res = await fetch(`${API}/api/documents`);
+          if (res.ok) { const d = await res.json(); setDocuments(d.documents || d || []); }
+        } catch (e) { console.log('書類取得エラー:', e); }
+      };
+
+      const fetchClients = async () => {
+        try {
+          const res = await fetch(`${API}/api/clients`);
+          if (res.ok) { const d = await res.json(); setClients(d.clients || d || []); }
+        } catch (e) {}
+      };
+
+      React.useEffect(() => { fetchTemplates(); fetchDocuments(); fetchClients(); }, []);
+
+      const filteredTemplates = templates.filter(t => {
+        if (catFilter !== '全て' && t.category !== catFilter) return false;
+        if (search && !t.name?.toLowerCase().includes(search.toLowerCase()) && !t.description?.toLowerCase().includes(search.toLowerCase())) return false;
+        return true;
+      });
+
+      const filteredDocs = documents.filter(d => {
+        if (docClientFilter && d.client_id !== docClientFilter) return false;
+        if (docTemplateFilter && d.template_id !== docTemplateFilter) return false;
+        if (docStatusFilter && d.status !== docStatusFilter) return false;
+        return true;
+      });
+
+      const selectedTemplate = templates.find(t => t.id === formTemplateId);
+
+      const handleAutoFill = async () => {
+        if (!formTemplateId || !formClientId) return;
+        setAutoFilling(true);
+        try {
+          const res = await fetch(`${API}/api/templates/${formTemplateId}/autofill/${formClientId}`);
+          if (res.ok) { const d = await res.json(); setFormData(prev => ({ ...prev, ...(d.data || d) })); }
+        } catch (e) { console.log('自動入力エラー:', e); }
+        setAutoFilling(false);
+      };
+
+      const handleSaveDocument = async (status) => {
+        const body = { template_id: formTemplateId, client_id: formClientId, data: formData, status };
+        try {
+          const url = formEditDocId ? `${API}/api/documents/${formEditDocId}` : `${API}/api/documents`;
+          const method = formEditDocId ? 'PUT' : 'POST';
+          const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          if (res.ok) {
+            fetchDocuments();
+            setSubView('documents');
+            setFormData({});
+            setFormEditDocId(null);
+          }
+        } catch (e) { console.log('書類保存エラー:', e); }
+      };
+
+      const handleEditDoc = (doc) => {
+        setFormTemplateId(doc.template_id || '');
+        setFormClientId(doc.client_id || '');
+        setFormData(doc.data || {});
+        setFormEditDocId(doc.id);
+        setSubView('formfill');
+      };
+
+      // ── Template Modal ──
+      const TemplateModal = ({ template, onClose }) => {
+        const [form, setForm] = React.useState(template || { name: '', category: '税務署', source: '', file_type: '', description: '', tags: '', field_schema: [] });
+        const [dragOver, setDragOver] = React.useState(false);
+        const [uploadedFile, setUploadedFile] = React.useState(null);
+
+        const handleFieldChange = (idx, key, val) => {
+          const fields = [...(form.field_schema || [])];
+          fields[idx] = { ...fields[idx], [key]: val };
+          setForm({ ...form, field_schema: fields });
+        };
+
+        const addField = () => {
+          setForm({ ...form, field_schema: [...(form.field_schema || []), { name: '', label: '', type: 'text', required: false, options: '' }] });
+        };
+
+        const removeField = (idx) => {
+          const fields = [...(form.field_schema || [])];
+          fields.splice(idx, 1);
+          setForm({ ...form, field_schema: fields });
+        };
+
+        const handleFileDrop = (e) => {
+          e.preventDefault(); setDragOver(false);
+          const file = e.dataTransfer?.files?.[0] || e.target?.files?.[0];
+          if (file) { setUploadedFile(file); setForm({ ...form, file_type: file.name.split('.').pop() || '' }); }
+        };
+
+        const handleSave = async () => {
+          const body = { ...form, tags: typeof form.tags === 'string' ? form.tags.split(',').map(s => s.trim()).filter(Boolean) : form.tags };
+          try {
+            const url = template?.id ? `${API}/api/templates/${template.id}` : `${API}/api/templates`;
+            const method = template?.id ? 'PUT' : 'POST';
+            const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            if (res.ok) { fetchTemplates(); onClose(); }
+          } catch (e) { console.log('テンプレート保存エラー:', e); }
+        };
+
+        return (
+          <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-box modal-large" onClick={e => e.stopPropagation()} style={{ maxWidth: 700, maxHeight: '90vh', overflowY: 'auto' }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1F4E79', marginBottom: 20 }}>{template?.id ? 'テンプレート編集' : 'テンプレート登録'}</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-group">
+                  <label className="form-label">テンプレート名 *</label>
+                  <input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="例: 法人税確定申告書" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">カテゴリ</label>
+                  <select className="form-select" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+                    {CATEGORIES.filter(c => c !== '全て').map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">提出先</label>
+                  <input className="form-input" value={form.source || ''} onChange={e => setForm({ ...form, source: e.target.value })} placeholder="例: 所轄税務署" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">ファイル形式</label>
+                  <input className="form-input" value={form.file_type || ''} onChange={e => setForm({ ...form, file_type: e.target.value })} placeholder="例: pdf, xlsx" />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">説明</label>
+                <textarea className="form-textarea" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="テンプレートの説明" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">タグ（カンマ区切り）</label>
+                <input className="form-input" value={Array.isArray(form.tags) ? form.tags.join(', ') : (form.tags || '')} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="例: 法人税, 確定申告, 別表" />
+              </div>
+
+              {/* File upload area */}
+              <div className="form-group">
+                <label className="form-label">ファイルアップロード</label>
+                <div
+                  onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleFileDrop}
+                  onClick={() => document.getElementById('tmpl-file-input').click()}
+                  style={{ border: `2px dashed ${dragOver ? '#1F4E79' : '#CBD5E0'}`, borderRadius: 12, padding: 28, textAlign: 'center', cursor: 'pointer', background: dragOver ? '#EFF6FF' : '#F8FAFC', transition: 'all 0.15s' }}>
+                  <input id="tmpl-file-input" type="file" style={{ display: 'none' }} onChange={handleFileDrop} />
+                  {uploadedFile
+                    ? <div style={{ fontSize: 13, color: '#1F4E79', fontWeight: 600 }}>📎 {uploadedFile.name}</div>
+                    : <div style={{ color: '#94A3B8', fontSize: 13 }}>📁 ファイルをドラッグ＆ドロップ、またはクリックして選択</div>
+                  }
+                </div>
+              </div>
+
+              {/* Field schema editor */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>フィールド定義</label>
+                  <button className="btn-primary" style={{ fontSize: 11, padding: '4px 12px' }} onClick={addField}>＋ フィールド追加</button>
+                </div>
+                {(form.field_schema || []).length === 0 && (
+                  <div style={{ color: '#94A3B8', fontSize: 12, textAlign: 'center', padding: 16 }}>フィールドが未定義です。「フィールド追加」で追加してください。</div>
+                )}
+                {(form.field_schema || []).map((f, i) => (
+                  <div key={i} style={{ background: '#F8FAFC', borderRadius: 8, padding: 12, marginBottom: 8, border: '1px solid #E2E8F0' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 60px 40px', gap: 8, alignItems: 'center' }}>
+                      <input className="form-input" placeholder="フィールド名" value={f.name || ''} onChange={e => handleFieldChange(i, 'name', e.target.value)} style={{ fontSize: 12, padding: '5px 8px' }} />
+                      <input className="form-input" placeholder="ラベル" value={f.label || ''} onChange={e => handleFieldChange(i, 'label', e.target.value)} style={{ fontSize: 12, padding: '5px 8px' }} />
+                      <select className="form-select" value={f.type || 'text'} onChange={e => handleFieldChange(i, 'type', e.target.value)} style={{ fontSize: 12, padding: '5px 8px' }}>
+                        {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={!!f.required} onChange={e => handleFieldChange(i, 'required', e.target.checked)} /> 必須
+                      </label>
+                      <button onClick={() => removeField(i)} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 16 }}>✕</button>
+                    </div>
+                    {f.type === 'select' && (
+                      <div style={{ marginTop: 6 }}>
+                        <input className="form-input" placeholder="選択肢（カンマ区切り）" value={f.options || ''} onChange={e => handleFieldChange(i, 'options', e.target.value)} style={{ fontSize: 12, padding: '5px 8px' }} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button className="btn-secondary" onClick={onClose}>キャンセル</button>
+                <button className="btn-primary" onClick={handleSave}>保存</button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      // ── Render ──
+      return (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1F4E79' }}>書類管理</h1>
+          </div>
+
+          {/* Sub-view tabs */}
+          <div className="tab-filter" style={{ marginBottom: 20 }}>
+            <button className={subView === 'templates' ? 'active' : ''} onClick={() => setSubView('templates')}>テンプレート一覧</button>
+            <button className={subView === 'documents' ? 'active' : ''} onClick={() => setSubView('documents')}>作成済み書類</button>
+            <button className={subView === 'formfill' ? 'active' : ''} onClick={() => setSubView('formfill')}>書類作成</button>
+          </div>
+
+          {/* ── Template List ── */}
+          {subView === 'templates' && (
+            <>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input className="form-input" placeholder="🔍 テンプレート検索..." value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 260 }} />
+                <button className="btn-primary" onClick={() => { setEditTemplate(null); setShowModal(true); }}>＋ テンプレート登録</button>
+              </div>
+              <div className="tab-filter">
+                {CATEGORIES.map(c => (
+                  <button key={c} className={catFilter === c ? 'active' : ''} onClick={() => setCatFilter(c)}>{c}</button>
+                ))}
+              </div>
+              {loading ? (
+                <div style={{ color: '#64748B', fontSize: 14, textAlign: 'center', marginTop: 40 }}>読み込み中...</div>
+              ) : filteredTemplates.length === 0 ? (
+                <div style={{ color: '#94A3B8', fontSize: 14, textAlign: 'center', marginTop: 40 }}>
+                  {templates.length === 0 ? 'テンプレートがありません。「テンプレート登録」から追加してください。' : '該当するテンプレートが見つかりません。'}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+                  {filteredTemplates.map(t => (
+                    <div key={t.id} className="client-card" onClick={() => { setEditTemplate(t); setShowModal(true); }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: '#1A202C' }}>{t.name}</div>
+                        <span className="badge" style={{ background: (CATEGORY_COLORS[t.category] || '#6B7280') + '20', color: CATEGORY_COLORS[t.category] || '#6B7280' }}>{t.category}</span>
+                      </div>
+                      {t.description && <div style={{ fontSize: 12, color: '#64748B', marginBottom: 8, lineHeight: 1.5 }}>{t.description}</div>}
+                      <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#94A3B8', flexWrap: 'wrap' }}>
+                        {t.source && <span>提出先: {t.source}</span>}
+                        {t.file_type && <span>形式: {t.file_type}</span>}
+                        {t.field_schema && <span>フィールド: {t.field_schema.length}件</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Document List ── */}
+          {subView === 'documents' && (
+            <>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select className="form-select" value={docClientFilter} onChange={e => setDocClientFilter(e.target.value)} style={{ maxWidth: 180 }}>
+                  <option value="">全ての顧問先</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <select className="form-select" value={docTemplateFilter} onChange={e => setDocTemplateFilter(e.target.value)} style={{ maxWidth: 180 }}>
+                  <option value="">全てのテンプレート</option>
+                  {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <select className="form-select" value={docStatusFilter} onChange={e => setDocStatusFilter(e.target.value)} style={{ maxWidth: 140 }}>
+                  <option value="">全てのステータス</option>
+                  <option value="draft">下書き</option>
+                  <option value="completed">完了</option>
+                  <option value="submitted">提出済</option>
+                </select>
+              </div>
+              {filteredDocs.length === 0 ? (
+                <div style={{ color: '#94A3B8', fontSize: 14, textAlign: 'center', marginTop: 40 }}>
+                  {documents.length === 0 ? '作成済みの書類がありません。「書類作成」タブから作成してください。' : '該当する書類が見つかりません。'}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {filteredDocs.map(d => {
+                    const tmpl = templates.find(t => t.id === d.template_id);
+                    const client = clients.find(c => c.id === d.client_id);
+                    return (
+                      <div key={d.id} className="client-card" onClick={() => handleEditDoc(d)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#1A202C' }}>{tmpl?.name || d.template_id}</div>
+                          <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>顧問先: {client?.name || d.client_id || '未設定'}</div>
+                          {d.updated_at && <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>更新: {new Date(d.updated_at).toLocaleDateString('ja-JP')}</div>}
+                        </div>
+                        <span className="badge" style={{ background: (DOC_STATUS_COLOR[d.status] || '#94A3B8') + '20', color: DOC_STATUS_COLOR[d.status] || '#94A3B8' }}>
+                          {DOC_STATUS_LABEL[d.status] || d.status}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Form Fill ── */}
+          {subView === 'formfill' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+                <div className="form-group">
+                  <label className="form-label">テンプレート選択</label>
+                  <select className="form-select" value={formTemplateId} onChange={e => { setFormTemplateId(e.target.value); setFormData({}); }}>
+                    <option value="">-- テンプレートを選択 --</option>
+                    {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">顧問先選択</label>
+                  <select className="form-select" value={formClientId} onChange={e => setFormClientId(e.target.value)}>
+                    <option value="">-- 顧問先を選択 --</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {formTemplateId && formClientId && (
+                <div style={{ marginBottom: 16 }}>
+                  <button className="btn-primary" onClick={handleAutoFill} disabled={autoFilling} style={{ fontSize: 12 }}>
+                    {autoFilling ? '⏳ 自動入力中...' : '🤖 自動入力'}
+                  </button>
+                </div>
+              )}
+
+              {selectedTemplate && selectedTemplate.field_schema && selectedTemplate.field_schema.length > 0 ? (
+                <div className="section-card" style={{ padding: 24 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1F4E79', marginBottom: 16 }}>{selectedTemplate.name}</h3>
+                  {selectedTemplate.field_schema.map((field, i) => (
+                    <div key={i} className="form-group">
+                      <label className="form-label">{field.label || field.name}{field.required && <span style={{ color: '#EF4444' }}> *</span>}</label>
+                      {field.type === 'text' && (
+                        <input className="form-input" value={formData[field.name] || ''} onChange={e => setFormData({ ...formData, [field.name]: e.target.value })} />
+                      )}
+                      {field.type === 'date' && (
+                        <input className="form-input" type="date" value={formData[field.name] || ''} onChange={e => setFormData({ ...formData, [field.name]: e.target.value })} />
+                      )}
+                      {field.type === 'number' && (
+                        <input className="form-input" type="number" value={formData[field.name] || ''} onChange={e => setFormData({ ...formData, [field.name]: e.target.value })} />
+                      )}
+                      {field.type === 'select' && (
+                        <select className="form-select" value={formData[field.name] || ''} onChange={e => setFormData({ ...formData, [field.name]: e.target.value })}>
+                          <option value="">-- 選択 --</option>
+                          {(typeof field.options === 'string' ? field.options.split(',').map(s => s.trim()) : (field.options || [])).map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      )}
+                      {field.type === 'textarea' && (
+                        <textarea className="form-textarea" value={formData[field.name] || ''} onChange={e => setFormData({ ...formData, [field.name]: e.target.value })} />
+                      )}
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                    <button className="btn-secondary" onClick={() => handleSaveDocument('draft')}>📝 下書き保存</button>
+                    <button className="btn-primary" onClick={() => handleSaveDocument('completed')}>✅ 完了</button>
+                  </div>
+                </div>
+              ) : formTemplateId ? (
+                <div style={{ color: '#94A3B8', fontSize: 13, textAlign: 'center', marginTop: 20 }}>このテンプレートにはフィールドが定義されていません。</div>
+              ) : (
+                <div style={{ color: '#94A3B8', fontSize: 13, textAlign: 'center', marginTop: 20 }}>テンプレートと顧問先を選択して書類を作成してください。</div>
+              )}
+            </>
+          )}
+
+          {/* Template Modal */}
+          {showModal && <TemplateModal template={editTemplate} onClose={() => setShowModal(false)} />}
+        </>
+      );
+    }
+
     // ── Settings Tab ──
     function SettingsTab() {
       const [quota, setQuota] = React.useState(null);
@@ -2033,7 +2437,7 @@
       );
 
       const isAgentTab = Object.keys(ALL_AGENTS).includes(activeTab);
-      const isContentTab = ['dashboard', 'agents', 'tasks', 'clients', 'calendar', 'checklists', 'settings'].includes(activeTab);
+      const isContentTab = ['dashboard', 'agents', 'tasks', 'clients', 'calendar', 'checklists', 'documents', 'settings'].includes(activeTab);
 
       return (
         <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -2053,6 +2457,7 @@
               <NavBtn label="👥 顧問先管理" tabKey="clients" />
               <NavBtn label="📅 申告カレンダー" tabKey="calendar" />
               <NavBtn label="✅ チェックリスト" tabKey="checklists" />
+              <NavBtn label="📄 書類管理" tabKey="documents" />
               <div style={{ borderTop: '1px solid #1E3A5F', margin: '8px 4px', opacity: 0.5 }} />
               <div style={{ fontSize: 10, color: '#475569', padding: '2px 8px', letterSpacing: 1 }}>AI エージェント</div>
               {Object.entries(ALL_AGENTS).map(([id, a]) => (
@@ -2085,7 +2490,7 @@
             {/* Content tabs */}
             {isContentTab && (
               <div style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
-                {loading && activeTab !== 'clients' && activeTab !== 'calendar' && activeTab !== 'checklists' && activeTab !== 'settings' && (
+                {loading && activeTab !== 'clients' && activeTab !== 'calendar' && activeTab !== 'checklists' && activeTab !== 'documents' && activeTab !== 'settings' && (
                   <div style={{ color: '#64748B', fontSize: 16, marginTop: 40, textAlign: 'center' }}>読み込み中...</div>
                 )}
                 {error && activeTab === 'dashboard' && (
@@ -2128,6 +2533,8 @@
                 {activeTab === 'calendar' && <CalendarTab />}
 
                 {activeTab === 'checklists' && <ChecklistsTab />}
+
+                {activeTab === 'documents' && <DocumentsTab />}
 
                 {activeTab === 'settings' && <SettingsTab />}
               </div>

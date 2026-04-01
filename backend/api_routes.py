@@ -1458,3 +1458,375 @@ def list_notification_log():
     """).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ===========================================================================
+# 14. 書類テンプレート管理 API
+# ===========================================================================
+
+TEMPLATE_DIR = os.path.join(DATA_DIR, "templates")
+os.makedirs(TEMPLATE_DIR, exist_ok=True)
+
+
+class TemplateCreate(BaseModel):
+    name: str
+    category: Optional[str] = None
+    source: Optional[str] = None
+    file_type: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[str] = None
+    field_schema: Optional[str] = None  # JSON文字列
+
+
+class TemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    source: Optional[str] = None
+    file_type: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[str] = None
+    field_schema: Optional[str] = None
+
+
+class DocumentCreate(BaseModel):
+    template_id: int
+    client_id: Optional[int] = None
+    title: str
+    field_data: Optional[str] = None  # JSON文字列
+    memo: Optional[str] = None
+
+
+class DocumentUpdate(BaseModel):
+    field_data: Optional[str] = None
+    status: Optional[str] = None
+    title: Optional[str] = None
+    memo: Optional[str] = None
+
+
+@router.get("/api/templates")
+def list_templates(category: Optional[str] = None, search: Optional[str] = None):
+    """書類テンプレート一覧を取得"""
+    conn = get_db()
+    query = "SELECT * FROM document_templates WHERE is_active = 1"
+    params: list = []
+    if category:
+        query += " AND category = ?"
+        params.append(category)
+    if search:
+        query += " AND (name LIKE ? OR description LIKE ? OR tags LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+    query += " ORDER BY created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return {"templates": _rows_to_list(rows)}
+
+
+@router.post("/api/templates")
+def create_template(tmpl: TemplateCreate):
+    """書類テンプレートを作成"""
+    conn = get_db()
+    now = _now()
+    cur = conn.execute(
+        """INSERT INTO document_templates
+           (name, category, source, file_type, description, tags, field_schema, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (tmpl.name, tmpl.category, tmpl.source, tmpl.file_type,
+         tmpl.description, tmpl.tags, tmpl.field_schema, now, now),
+    )
+    tid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    _log_audit("template_create", f"template_id={tid} name={tmpl.name}")
+    return {"id": tid, "name": tmpl.name, "created_at": now}
+
+
+@router.get("/api/templates/{template_id}")
+def get_template(template_id: int):
+    """書類テンプレートを取得"""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM document_templates WHERE id = ? AND is_active = 1",
+        (template_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="テンプレートが見つかりません")
+    return dict(row)
+
+
+@router.put("/api/templates/{template_id}")
+def update_template(template_id: int, tmpl: TemplateUpdate):
+    """書類テンプレートを更新"""
+    conn = get_db()
+    existing = conn.execute(
+        "SELECT * FROM document_templates WHERE id = ? AND is_active = 1",
+        (template_id,),
+    ).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="テンプレートが見つかりません")
+    updates = {}
+    for field in ["name", "category", "source", "file_type", "description", "tags", "field_schema"]:
+        val = getattr(tmpl, field, None)
+        if val is not None:
+            updates[field] = val
+    if not updates:
+        conn.close()
+        return dict(existing)
+    updates["updated_at"] = _now()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [template_id]
+    conn.execute(f"UPDATE document_templates SET {set_clause} WHERE id = ?", values)
+    conn.commit()
+    row = conn.execute("SELECT * FROM document_templates WHERE id = ?", (template_id,)).fetchone()
+    conn.close()
+    _log_audit("template_update", f"template_id={template_id}")
+    return dict(row)
+
+
+@router.delete("/api/templates/{template_id}")
+def delete_template(template_id: int):
+    """書類テンプレートを論理削除"""
+    conn = get_db()
+    conn.execute(
+        "UPDATE document_templates SET is_active = 0, updated_at = ? WHERE id = ?",
+        (_now(), template_id),
+    )
+    conn.commit()
+    conn.close()
+    _log_audit("template_delete", f"template_id={template_id}")
+    return {"status": "deleted", "id": template_id}
+
+
+@router.post("/api/templates/{template_id}/upload")
+async def upload_template_file(template_id: int, file: UploadFile = File(...)):
+    """テンプレートファイルをアップロード"""
+    conn = get_db()
+    existing = conn.execute(
+        "SELECT * FROM document_templates WHERE id = ? AND is_active = 1",
+        (template_id,),
+    ).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="テンプレートが見つかりません")
+
+    # ファイル保存
+    ext = os.path.splitext(file.filename or "")[1] or ""
+    stored_name = f"template_{template_id}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = os.path.join(TEMPLATE_DIR, stored_name)
+    contents = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    # file_type を拡張子から判定
+    file_type = ext.lstrip(".").lower() if ext else None
+
+    now = _now()
+    conn.execute(
+        "UPDATE document_templates SET file_path = ?, file_type = ?, updated_at = ? WHERE id = ?",
+        (file_path, file_type, now, template_id),
+    )
+    conn.commit()
+    conn.close()
+    _log_audit("template_upload", f"template_id={template_id} file={stored_name}")
+    return {"status": "uploaded", "file_path": file_path, "file_type": file_type}
+
+
+# ===========================================================================
+# 15. 書類インスタンス管理 API
+# ===========================================================================
+
+@router.get("/api/documents")
+def list_documents(
+    client_id: Optional[int] = None,
+    template_id: Optional[int] = None,
+    status: Optional[str] = None,
+):
+    """書類インスタンス一覧を取得"""
+    conn = get_db()
+    query = """
+        SELECT di.*, dt.name as template_name, c.name as client_name
+        FROM document_instances di
+        LEFT JOIN document_templates dt ON di.template_id = dt.id
+        LEFT JOIN clients c ON di.client_id = c.id
+        WHERE 1=1
+    """
+    params: list = []
+    if client_id is not None:
+        query += " AND di.client_id = ?"
+        params.append(client_id)
+    if template_id is not None:
+        query += " AND di.template_id = ?"
+        params.append(template_id)
+    if status:
+        query += " AND di.status = ?"
+        params.append(status)
+    query += " ORDER BY di.created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return {"documents": _rows_to_list(rows)}
+
+
+@router.post("/api/documents")
+def create_document(doc: DocumentCreate):
+    """書類インスタンスを作成"""
+    conn = get_db()
+    now = _now()
+    cur = conn.execute(
+        """INSERT INTO document_instances
+           (template_id, client_id, title, field_data, memo, status, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (doc.template_id, doc.client_id, doc.title, doc.field_data, doc.memo, "draft", now, now),
+    )
+    did = cur.lastrowid
+    conn.commit()
+    conn.close()
+    _log_audit("document_create", f"document_id={did} title={doc.title}")
+    return {"id": did, "title": doc.title, "status": "draft", "created_at": now}
+
+
+@router.get("/api/documents/{document_id}")
+def get_document(document_id: int):
+    """書類インスタンスを取得"""
+    conn = get_db()
+    row = conn.execute(
+        """SELECT di.*, dt.name as template_name, c.name as client_name
+           FROM document_instances di
+           LEFT JOIN document_templates dt ON di.template_id = dt.id
+           LEFT JOIN clients c ON di.client_id = c.id
+           WHERE di.id = ?""",
+        (document_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="書類が見つかりません")
+    return dict(row)
+
+
+@router.put("/api/documents/{document_id}")
+def update_document(document_id: int, doc: DocumentUpdate):
+    """書類インスタンスを更新"""
+    conn = get_db()
+    existing = conn.execute(
+        "SELECT * FROM document_instances WHERE id = ?", (document_id,),
+    ).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="書類が見つかりません")
+    updates = {}
+    for field in ["field_data", "status", "title", "memo"]:
+        val = getattr(doc, field, None)
+        if val is not None:
+            updates[field] = val
+    if not updates:
+        conn.close()
+        return dict(existing)
+    updates["updated_at"] = _now()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [document_id]
+    conn.execute(f"UPDATE document_instances SET {set_clause} WHERE id = ?", values)
+    conn.commit()
+    row = conn.execute("SELECT * FROM document_instances WHERE id = ?", (document_id,)).fetchone()
+    conn.close()
+    _log_audit("document_update", f"document_id={document_id}")
+    return dict(row)
+
+
+@router.delete("/api/documents/{document_id}")
+def delete_document(document_id: int):
+    """書類インスタンスを削除"""
+    conn = get_db()
+    conn.execute("DELETE FROM document_instances WHERE id = ?", (document_id,))
+    conn.commit()
+    conn.close()
+    _log_audit("document_delete", f"document_id={document_id}")
+    return {"status": "deleted", "id": document_id}
+
+
+@router.post("/api/documents/{document_id}/complete")
+def complete_document(document_id: int):
+    """書類インスタンスを完了状態にする"""
+    conn = get_db()
+    existing = conn.execute(
+        "SELECT * FROM document_instances WHERE id = ?", (document_id,),
+    ).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="書類が見つかりません")
+    now = _now()
+    conn.execute(
+        "UPDATE document_instances SET status = 'completed', updated_at = ? WHERE id = ?",
+        (now, document_id),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM document_instances WHERE id = ?", (document_id,)).fetchone()
+    conn.close()
+    _log_audit("document_complete", f"document_id={document_id}")
+    return dict(row)
+
+
+@router.get("/api/templates/{template_id}/autofill/{client_id}")
+def autofill_template(template_id: int, client_id: int):
+    """テンプレートのフィールドを顧問先データで自動入力"""
+    conn = get_db()
+
+    # テンプレート存在確認
+    tmpl = conn.execute(
+        "SELECT * FROM document_templates WHERE id = ? AND is_active = 1",
+        (template_id,),
+    ).fetchone()
+    if not tmpl:
+        conn.close()
+        raise HTTPException(status_code=404, detail="テンプレートが見つかりません")
+
+    # 顧問先データ取得
+    client = conn.execute("SELECT * FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if not client:
+        conn.close()
+        raise HTTPException(status_code=404, detail="顧問先が見つかりません")
+    client_dict = dict(client)
+
+    # フィールドマッピング取得
+    mappings = conn.execute(
+        "SELECT * FROM template_field_mappings WHERE template_id = ?",
+        (template_id,),
+    ).fetchall()
+    conn.close()
+
+    # マッピングに基づいて自動入力データを構築
+    filled_data = {}
+    for m in mappings:
+        m_dict = dict(m)
+        field_name = m_dict["field_name"]
+        client_column = m_dict["client_column"]
+        transform = m_dict.get("transform")
+
+        value = client_dict.get(client_column, "")
+        if value and transform:
+            # 簡易変換処理
+            if transform == "upper":
+                value = str(value).upper()
+            elif transform == "lower":
+                value = str(value).lower()
+            elif transform == "strip":
+                value = str(value).strip()
+        filled_data[field_name] = value
+
+    # マッピングが無い場合でも、field_schemaがあればクライアントデータで推測
+    if not mappings and tmpl["field_schema"]:
+        try:
+            schema_fields = json.loads(tmpl["field_schema"])
+            for sf in schema_fields:
+                fname = sf if isinstance(sf, str) else sf.get("name", "")
+                # フィールド名がクライアントカラムと一致する場合に自動マッピング
+                if fname in client_dict:
+                    filled_data[fname] = client_dict[fname]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return {
+        "template_id": template_id,
+        "client_id": client_id,
+        "client_name": client_dict.get("name", ""),
+        "filled_data": filled_data,
+    }
